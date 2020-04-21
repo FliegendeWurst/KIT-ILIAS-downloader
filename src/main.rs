@@ -5,6 +5,7 @@ use regex::Regex;
 use reqwest::Client;
 use scraper::{ElementRef, Html, Selector};
 use serde_json::json;
+use structopt::StructOpt;
 use tokio::fs::File as AsyncFile;
 use tokio::io::{stream_reader, BufWriter};
 use tokio::task;
@@ -24,6 +25,7 @@ use errors::*;
 const ILIAS_URL: &'static str = "https://ilias.studium.kit.edu/";
 
 struct ILIAS {
+	opt: Opt,
 	user: String,
 	pass: String,
 	path_prefix: PathBuf,
@@ -186,7 +188,7 @@ impl URL {
 }
 
 impl ILIAS {
-	async fn login<S1, S2>(user: S1, pass: S1) -> Result<Self> where S1: Into<String>, S2: Into<String> {
+	async fn login<S1, S2>(opt: Opt, user: S1, pass: S1) -> Result<Self> where S1: Into<String>, S2: Into<String> {
 		let user = user.into();
 		let pass = pass.into();
 		let client = Client::builder()
@@ -238,7 +240,7 @@ impl ILIAS {
 		println!("Logged in!");
 		let path_prefix = PathBuf::from(env!("ILIAS_DIR"));
 		Ok(ILIAS {
-			client, user, pass, path_prefix
+			opt, client, user, pass, path_prefix
 		})
 	}
 
@@ -270,31 +272,22 @@ impl ILIAS {
 	}
 
 	async fn download(&self, url: &str) -> Result<reqwest::Response> {
-		//let url = format!("{}{}", ILIAS_URL, url.url);
-		if VERBOSITY > 0 {
+		if self.opt.verbose > 0 {
 			println!("Downloading {}", url);
 		}
 		Ok(self.client.get(url).send().await?)
 	}
 }
 
-const DOWNLOAD_FILES: bool = true;
-const DOWNLOAD_VIDEOS: bool = true;
-
-const SKIP_EXISTING: bool = true;
-
-const VERBOSITY: usize = 1;
-
 #[tokio::main]
 async fn main() {
+	let opt = Opt::from_args();
 	*PANIC_HOOK.lock() = panic::take_hook();
 	panic::set_hook(Box::new(|info| {
 		*TASKS_RUNNING.lock() -= 1;
 		PANIC_HOOK.lock()(info);
 	}));
-	// TODO: config at runtime..
-	// it's literally in the executable currently
-	let mut ilias = match ILIAS::login::<&str, &str>(env!("ILIAS_USER"), env!("ILIAS_PASS")).await {
+	let mut ilias = match ILIAS::login::<&str, &str>(opt, env!("ILIAS_USER"), env!("ILIAS_PASS")).await {
 		Ok(ilias) => ilias,
 		Err(e) => panic!("error: {:?}", e)
 	};
@@ -328,7 +321,7 @@ lazy_static!{
 // see https://github.com/rust-lang/rust/issues/53690#issuecomment-418911229
 //async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) {
 fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::Future<Output = ()> + Send { async move {
-	if VERBOSITY > 0 {
+	if ilias.opt.verbose > 0 {
 		println!("Syncing {} {}..", obj.kind(), path.strip_prefix(&ilias.path_prefix).unwrap().to_string_lossy());
 	}
 	match &obj {
@@ -369,11 +362,11 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			}
 		},
 		File { name, url } => {
-			if !DOWNLOAD_FILES {
+			if ilias.opt.skip_files {
 				return;
 			}
-			if SKIP_EXISTING && fs::metadata(&path).is_ok() {
-				if VERBOSITY > 1 {
+			if !ilias.opt.force && fs::metadata(&path).is_ok() {
+				if ilias.opt.verbose > 1 {
 					println!("Skipping download, file exists already");
 				}
 				return;
@@ -392,7 +385,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			}
 		},
 		PluginDispatch { name, url } => {
-			if !DOWNLOAD_VIDEOS {
+			if ilias.opt.no_videos {
 				return;
 			}
 			if let Err(e) = fs::create_dir(&path) {
@@ -422,7 +415,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 					}
 					let mut path = path.clone();
 					path.push(format!("{}.mp4", title));
-					if VERBOSITY > 0 {
+					if ilias.opt.verbose > 0 {
 						println!("Found video: {}", title);
 					}
 					let video = Video {
@@ -442,11 +435,11 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			lazy_static!{
 				static ref XOCT_REGEX: Regex = Regex::new(r#"(?m)<script>\s+xoctPaellaPlayer\.init\(([\s\S]+)\)\s+</script>"#).unwrap();
 			}
-			if !DOWNLOAD_VIDEOS {
+			if ilias.opt.no_videos {
 				return;
 			}
-			if SKIP_EXISTING && fs::metadata(&path).is_ok() {
-				if VERBOSITY > 1 {
+			if !ilias.opt.force && fs::metadata(&path).is_ok() {
+				if ilias.opt.verbose > 1 {
 					println!("Skipping download, file exists already");
 				}
 				return;
@@ -468,7 +461,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			let mut reader = stream_reader(resp.bytes_stream().map_err(|x| {
 				io::Error::new(io::ErrorKind::Other, x)
 			}));
-			if VERBOSITY > 0 {
+			if ilias.opt.verbose > 0 {
 				println!("Saving video to {:?}", path);
 			}
 			let file = AsyncFile::create(&path).await.unwrap();
@@ -476,9 +469,33 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			tokio::io::copy(&mut reader, &mut file).await.unwrap();
 		},
 		o => {
-			if VERBOSITY > 0 {
+			if ilias.opt.verbose > 0 {
 				println!("ignoring {:#?}", o)
 			}
 		}
 	}
 }}
+
+#[derive(Debug, StructOpt)]
+#[structopt(name = "KIT-ILIAS-downloader")]
+struct Opt {
+    /// Do not download files
+    #[structopt(short, long)]
+	skip_files: bool,
+	
+	/// Do not download Opencast videos
+    #[structopt(short, long)]
+	no_videos: bool,
+	
+	/// Re-download already present files
+    #[structopt(short)]
+	force: bool,
+	
+	/// Verbosity (>=1 prints progress)
+	#[structopt(short, multiple = true, parse(from_occurrences))]
+	verbose: usize,
+
+	/// Output directory
+    #[structopt(short, long, parse(from_os_str))]
+    output: PathBuf,
+}

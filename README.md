@@ -2,7 +2,7 @@
 
 Download content from ILIAS. That includes:
 
-* files
+* files (latest version)
 * Opencast lectures
 
 ## Installation
@@ -19,7 +19,24 @@ $ cp target/release/KIT-ILIAS-downloader [directory in $PATH]
 
 ## Usage
 
-TBD
+```sh
+$ KIT-ILIAS-downloader --help
+KIT-ILIAS-downloader 0.1.0
+
+USAGE:
+    KIT-ILIAS-downloader [FLAGS] --output <output>
+
+FLAGS:
+    -f,                 Re-download already present files
+    -h, --help          Prints help information
+    -n, --no-videos     Do not download Opencast videos
+    -s, --skip-files    Do not download files
+    -V, --version       Prints version information
+    -v                  Verbosity (>=1 prints progress)
+
+OPTIONS:
+    -o, --output <output>    Output directory
+```
 
 ## Credits
 
