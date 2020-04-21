@@ -26,6 +26,7 @@ const ILIAS_URL: &'static str = "https://ilias.studium.kit.edu/";
 
 struct ILIAS {
 	opt: Opt,
+	// TODO: use these for re-authentication in case of session timeout/invalidation
 	user: String,
 	pass: String,
 	path_prefix: PathBuf,
@@ -226,7 +227,7 @@ impl ILIAS {
 			login_soup = BeautifulSoup(otp_response.text, 'lxml')
 		*/
 		let saml = Selector::parse(r#"input[name="SAMLResponse"]"#).unwrap();
-		let saml = dom.select(&saml).next().expect("no SAML response");
+		let saml = dom.select(&saml).next().expect("no SAML response, incorrect password?");
 		let relay_state = Selector::parse(r#"input[name="RelayState"]"#).unwrap();
 		let relay_state = dom.select(&relay_state).next().expect("no relay state");
 		println!("Logging into ILIAS..");
@@ -287,7 +288,9 @@ async fn main() {
 		*TASKS_RUNNING.lock() -= 1;
 		PANIC_HOOK.lock()(info);
 	}));
-	let mut ilias = match ILIAS::login::<&str, &str>(opt, env!("ILIAS_USER"), env!("ILIAS_PASS")).await {
+	let user = rprompt::prompt_reply_stdout("Username: ").unwrap();
+	let pass = rpassword::read_password_from_tty(Some("Password: ")).unwrap();
+	let mut ilias = match ILIAS::login::<_, String>(opt, user, pass).await {
 		Ok(ilias) => ilias,
 		Err(e) => panic!("error: {:?}", e)
 	};
