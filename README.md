@@ -32,7 +32,7 @@ FLAGS:
     -n, --no-videos     Do not download Opencast videos
     -s, --skip-files    Do not download files
     -V, --version       Prints version information
-    -v                  Verbosity (>=1 prints progress)
+    -v                  Verbose logging (print objects downloaded)
 
 OPTIONS:
     -o, --output <output>    Output directory

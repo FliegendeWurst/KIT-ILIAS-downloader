@@ -499,7 +499,7 @@ struct Opt {
     #[structopt(short)]
 	force: bool,
 	
-	/// Verbosity (>=1 prints progress)
+	/// Verbose logging (print objects downloaded)
 	#[structopt(short, multiple = true, parse(from_occurrences))]
 	verbose: usize,
 
