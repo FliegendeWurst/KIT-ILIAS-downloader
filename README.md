@@ -7,7 +7,7 @@ Download content from ILIAS. That includes:
 
 ## Installation
 
-Go to the [releases](releases) and get the executable for your operating system. Alternatively compile from source:
+Go to the [releases](../../releases) and get the executable for your operating system. Alternatively compile from source:
 ```sh
 $ git clone https://github.com/FliegendeWurst/KIT-ILIAS-downloader
 ...
