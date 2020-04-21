@@ -29,7 +29,6 @@ struct ILIAS {
 	// TODO: use these for re-authentication in case of session timeout/invalidation
 	user: String,
 	pass: String,
-	path_prefix: PathBuf,
 	client: Client
 }
 
@@ -189,15 +188,18 @@ impl URL {
 }
 
 impl ILIAS {
-	async fn login<S1, S2>(opt: Opt, user: S1, pass: S1) -> Result<Self> where S1: Into<String>, S2: Into<String> {
+	async fn login<S1: Into<String>, S2: Into<String>>(opt: Opt, user: S1, pass: S2) -> Result<Self> {
 		let user = user.into();
 		let pass = pass.into();
 		let client = Client::builder()
 			.cookie_store(true)
-			.user_agent("KIT-ILIAS-fuse/0.0.1-dev")
+			.user_agent("KIT-ILIAS-downloader/0.1.0")
 			.build()?;
+		let this = ILIAS {
+			opt, client, user, pass
+		};
 		println!("Logging into Shibboleth..");
-		let session_establishment = client
+		let session_establishment = this.client
 			.post("https://ilias.studium.kit.edu/Shibboleth.sso/Login")
 			.form(&json!({
 				"sendLogin": "1",
@@ -207,11 +209,11 @@ impl ILIAS {
 			}))
 			.send().await?;
 		println!("Logging into identity provider..");
-		let login_response = client
+		let login_response = this.client
 			.post(session_establishment.url().clone())
 			.form(&json!({
-				"j_username": &user,
-				"j_password": &pass,
+				"j_username": &this.user,
+				"j_password": &this.pass,
 				"_eventId_proceed": ""
 			}))
 			.send().await?.text().await?;
@@ -231,7 +233,7 @@ impl ILIAS {
 		let relay_state = Selector::parse(r#"input[name="RelayState"]"#).unwrap();
 		let relay_state = dom.select(&relay_state).next().expect("no relay state");
 		println!("Logging into ILIAS..");
-		client
+		this.client
 			.post("https://ilias.studium.kit.edu/Shibboleth.sso/SAML2/POST")
 			.form(&json!({
 				"SAMLResponse": saml.value().attr("value").unwrap(),
@@ -239,10 +241,7 @@ impl ILIAS {
 			}))
 			.send().await?;
 		println!("Logged in!");
-		let path_prefix = PathBuf::from(env!("ILIAS_DIR"));
-		Ok(ILIAS {
-			opt, client, user, pass, path_prefix
-		})
+		Ok(this)
 	}
 
 	async fn personal_desktop(&mut self) -> Result<Dashboard> {
@@ -297,7 +296,7 @@ async fn main() {
 	let desktop = ilias.personal_desktop().await.unwrap();
 	let mut queue = VecDeque::new();
 	for item in desktop.items {
-		let mut path = ilias.path_prefix.clone();
+		let mut path = ilias.opt.output.clone();
 		path.push(item.name());
 		queue.push_back((path, item));
 	}
@@ -325,10 +324,10 @@ lazy_static!{
 //async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) {
 fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::Future<Output = ()> + Send { async move {
 	if ilias.opt.verbose > 0 {
-		println!("Syncing {} {}..", obj.kind(), path.strip_prefix(&ilias.path_prefix).unwrap().to_string_lossy());
+		println!("Syncing {} {}..", obj.kind(), path.strip_prefix(&ilias.opt.output).unwrap().to_string_lossy());
 	}
 	match &obj {
-		Course { name, url } => {
+		Course { url, .. } => {
 			if let Err(e) = fs::create_dir(&path) {
 				if e.kind() != io::ErrorKind::AlreadyExists {
 					println!("error: {:?}", e);
@@ -346,7 +345,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 				});
 			}
 		},
-		Folder { name, url } => {
+		Folder { url, .. } => {
 			if let Err(e) = fs::create_dir(&path) {
 				if e.kind() != io::ErrorKind::AlreadyExists {
 					println!("error: {:?}", e);
@@ -364,7 +363,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 				});
 			}
 		},
-		File { name, url } => {
+		File { url, .. } => {
 			if ilias.opt.skip_files {
 				return;
 			}
@@ -387,7 +386,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 				Err(e) => println!("error: {:?}", e)
 			}
 		},
-		PluginDispatch { name, url } => {
+		PluginDispatch { url, .. } => {
 			if ilias.opt.no_videos {
 				return;
 			}
@@ -450,15 +449,21 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			let url = format!("{}{}", ILIAS_URL, url);
 			let data = ilias.download(&url);
 			let html = data.await.unwrap().text().await.unwrap();
-			//println!("{}", html);
+			if ilias.opt.verbose > 1 {
+				println!("{}", html);
+			}
 			let json: serde_json::Value = {
 				let mut json_capture = XOCT_REGEX.captures_iter(&html);
 				let json = &json_capture.next().unwrap()[1];
-				//println!("{}", json);
+				if ilias.opt.verbose > 1 {
+					println!("{}", json);
+				}
 				let json = json.split(",\n").nth(0).unwrap();
 				serde_json::from_str(&json.trim()).unwrap()
 			};
-			//println!("{}", json);
+			if ilias.opt.verbose > 1 {
+				println!("{}", json);
+			}
 			let url = json["streams"][0]["sources"]["mp4"][0]["src"].as_str().unwrap();
 			let resp = ilias.download(&url).await.unwrap();
 			let mut reader = stream_reader(resp.bytes_stream().map_err(|x| {
