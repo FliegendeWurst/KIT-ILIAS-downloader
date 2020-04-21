@@ -1,0 +1,20 @@
+[package]
+name = "KIT-ILIAS-downloader"
+version = "0.1.0"
+authors = ["FliegendeWurst <2012gdwu@web.de>"]
+license = "GPL-2.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+reqwest = { version = "0.10.4", features = ["cookies", "json", "stream"] }
+error-chain = "0.12.2"
+tokio = { version = "0.2", features = ["full"] }
+serde_json = "1.0.51"
+scraper = "0.11.0"
+url = "2.1.1"
+futures-util = "0.3.4"
+regex = "1.3.7"
+lazy_static = "1.4.0"
+parking_lot = "0.10.2"
