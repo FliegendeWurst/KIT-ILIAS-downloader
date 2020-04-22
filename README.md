@@ -19,6 +19,8 @@ $ cp target/release/KIT-ILIAS-downloader [directory in $PATH]
 
 ## Usage
 
+Use `-o ILIAS` to set the download directory and `-j 5` to speed up the download. Username and password have to be provided every time the program is run.
+
 ```sh
 $ KIT-ILIAS-downloader --help
 KIT-ILIAS-downloader 0.2.0
@@ -42,4 +44,4 @@ OPTIONS:
 
 ## Credits
 
-Inspired by https://github.com/brantsch/kit-ilias-fuse.
+Inspired by https://github.com/brantsch/kit-ilias-fuse. Re-implemented because the FUSE downloads were too slow and truncated.
