@@ -18,6 +18,7 @@ use std::io;
 use std::panic;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 mod errors;
 use errors::*;
@@ -55,6 +56,9 @@ enum Object {
 		name: String,
 		url: URL
 	},
+	Thread {
+		url: URL
+	},
 	Wiki {
 		name: String,
 		url: URL
@@ -85,11 +89,27 @@ impl Object {
 			Folder { name, .. } => &name,
 			File { name, .. } => &name,
 			Forum { name, .. } => &name,
+			Thread { url } => &url.thr_pk.as_ref().unwrap(),
 			Wiki { name, .. } => &name,
 			ExerciseHandler { name, .. } => &name,
 			PluginDispatch { name, .. } => &name,
 			Video { url } => &url,
 			Generic { name, .. } => &name,
+		}
+	}
+
+	fn url(&self) -> &URL {
+		match self {
+			Course { url, .. } => &url,
+			Folder { url, .. } => &url,
+			File { url, .. } => &url,
+			Forum { url, .. } => &url,
+			Thread { url } => &url,
+			Wiki { url, .. } => &url,
+			ExerciseHandler { url, .. } => &url,
+			PluginDispatch { url, .. } => &url,
+			Video { .. } => unreachable!(),
+			Generic { url, .. } => &url,
 		}
 	}
 
@@ -99,6 +119,7 @@ impl Object {
 			Folder { .. } => "folder",
 			File { .. } => "file",
 			Forum { .. } => "forum",
+			Thread { .. } => "thread",
 			Wiki { .. } => "wiki",
 			ExerciseHandler { .. } => "exercise handler",
 			PluginDispatch { .. } => "plugin dispatch",
@@ -110,6 +131,12 @@ impl Object {
 	fn from_link(item: ElementRef, link: ElementRef) -> Self {
 		let mut name = link.text().collect::<String>().replace('/', "-");
 		let url = URL::from_href(link.value().attr("href").unwrap());
+
+		if url.thr_pk.is_some() {
+			return Thread {
+				url
+			};
+		}
 
 		if url.url.starts_with("https://ilias.studium.kit.edu/goto.php") {
 			let item_prop = Selector::parse("span.il_ItemProperty").unwrap();
@@ -151,6 +178,8 @@ struct URL {
 	cmdNode: Option<String>,
 	cmd: Option<String>,
 	forwardCmd: Option<String>,
+	thr_pk: Option<String>,
+	pos_pk: Option<String>,
 	ref_id: String,
 }
 
@@ -163,6 +192,8 @@ impl URL {
 		let mut cmdNode = None;
 		let mut cmd = None;
 		let mut forwardCmd = None;
+		let mut thr_pk = None;
+		let mut pos_pk = None;
 		let mut ref_id = String::new();
 		for (k, v) in url.query_pairs() {
 			match &*k {
@@ -171,6 +202,8 @@ impl URL {
 				"cmdNode" => cmdNode = Some(v.into_owned()),
 				"cmd" => cmd = Some(v.into_owned()),
 				"forwardCmd" => forwardCmd = Some(v.into_owned()),
+				"thr_pk" => thr_pk = Some(v.into_owned()),
+				"pos_pk" => pos_pk = Some(v.into_owned()),
 				"ref_id" => ref_id = v.into_owned(),
 				_ => {}
 			}
@@ -182,6 +215,8 @@ impl URL {
 			cmdNode,
 			cmd,
 			forwardCmd,
+			thr_pk,
+			pos_pk,
 			ref_id
 		}
 	}
@@ -194,6 +229,7 @@ impl ILIAS {
 		let client = Client::builder()
 			.cookie_store(true)
 			.user_agent("KIT-ILIAS-downloader/0.1.0")
+			.max_idle_per_host(1)
 			.build()?;
 		let this = ILIAS {
 			opt, client, user, pass
@@ -304,13 +340,16 @@ async fn main() {
 	while let Some((path, obj)) = queue.pop_front() {
 		let ilias = Arc::clone(&ilias);
 		task::spawn(async {
+			while *TASKS_RUNNING.lock() > 1 {
+				tokio::time::delay_for(Duration::from_millis(100)).await;
+			}
 			*TASKS_RUNNING.lock() += 1;
 			process(ilias, path, obj).await;
 			*TASKS_RUNNING.lock() -= 1;
 		});
 	}
 	while *TASKS_RUNNING.lock() > 0 {
-		tokio::time::delay_for(std::time::Duration::from_millis(500)).await;
+		tokio::time::delay_for(Duration::from_millis(500)).await;
 	}
 }
 
@@ -339,6 +378,9 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 				path.push(item.name());
 				let ilias = Arc::clone(&ilias);
 				task::spawn(async {
+					while *TASKS_RUNNING.lock() > 1 {
+						tokio::time::delay_for(Duration::from_millis(100)).await;
+					}
 					*TASKS_RUNNING.lock() += 1;
 					process(ilias, path, item).await;
 					*TASKS_RUNNING.lock() -= 1;
@@ -357,6 +399,9 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 				path.push(item.name());
 				let ilias = Arc::clone(&ilias);
 				task::spawn(async {
+					while *TASKS_RUNNING.lock() > 1 {
+						tokio::time::delay_for(Duration::from_millis(100)).await;
+					}
 					*TASKS_RUNNING.lock() += 1;
 					process(ilias, path, item).await;
 					*TASKS_RUNNING.lock() -= 1;
@@ -425,6 +470,9 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 					};
 					let ilias = Arc::clone(&ilias);
 					task::spawn(async {
+						while *TASKS_RUNNING.lock() > 1 {
+							tokio::time::delay_for(Duration::from_millis(100)).await;
+						}
 						*TASKS_RUNNING.lock() += 1;
 						process(ilias, path, video).await;
 						*TASKS_RUNNING.lock() -= 1;
@@ -475,6 +523,103 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			let file = AsyncFile::create(&path).await.unwrap();
 			let mut file = BufWriter::new(file);
 			tokio::io::copy(&mut reader, &mut file).await.unwrap();
+		},
+		Forum { url, .. } => {
+			if let Err(e) = fs::create_dir(&path) {
+				if e.kind() != io::ErrorKind::AlreadyExists {
+					println!("error: {:?}", e);
+				}
+			}
+			let url = format!("{}ilias.php?ref_id={}&cmd=showThreads&cmdClass=ilrepositorygui&cmdNode=uf&baseClass=ilrepositorygui", ILIAS_URL, url.ref_id);
+			let html = {
+				let a = Selector::parse("a").unwrap();
+				let data = ilias.download(&url);
+				let html_text = data.await.unwrap().text().await.unwrap();
+				let url = {
+					let html = Html::parse_document(&html_text);
+					//https://ilias.studium.kit.edu/ilias.php?ref_id=122&cmdClass=ilobjforumgui&frm_tt_e39_122_trows=800&cmd=showThreads&cmdNode=uf:lg&baseClass=ilrepositorygui
+					let url = {
+						let t800 = html.select(&a).filter(|x| x.value().attr("href").unwrap_or("").contains("trows=800")).next().expect("can't find forum thread count selector");
+						t800.value().attr("href").unwrap()
+					};
+					format!("{}{}", ILIAS_URL, url)
+				};
+				let data = ilias.download(&url);
+				let html = data.await.unwrap().text().await.unwrap();
+				Html::parse_document(&html)
+			};
+			let a = Selector::parse("a").unwrap();
+			let tr = Selector::parse("tr").unwrap();
+			let td = Selector::parse("td").unwrap();
+			for row in html.select(&tr) {
+				let cells = row.select(&td).collect::<Vec<_>>();
+				if cells.len() != 6 {
+					continue;
+				}
+				let link = cells[1].select(&a).next().unwrap();
+				let object = Object::from_link(link, link);
+				let mut path = path.clone();
+				let name = format!("{}_{}", object.url().thr_pk.as_ref().expect("thr_pk not found for thread"), link.text().collect::<String>().replace('/', "-").trim());
+				path.push(name);
+				let ilias = Arc::clone(&ilias);
+				task::spawn(async {
+					while *TASKS_RUNNING.lock() > 1 {
+						tokio::time::delay_for(Duration::from_millis(100)).await;
+					}
+					*TASKS_RUNNING.lock() += 1;
+					process(ilias, path, object).await;
+					*TASKS_RUNNING.lock() -= 1;
+				});
+			}
+		},
+		Thread { url } => {
+			if let Err(e) = fs::create_dir(&path) {
+				if e.kind() != io::ErrorKind::AlreadyExists {
+					println!("error: {:?}", e);
+				}
+				// skip already downloaded
+				// TODO: compare modification date
+				if !ilias.opt.force {
+					return;
+				}
+			}
+			let url = format!("{}{}", ILIAS_URL, url.url);
+			let data = ilias.download(&url);
+			let html = data.await.unwrap().text().await.unwrap();
+			let html = Html::parse_document(&html);
+			let post = Selector::parse(".ilFrmPostRow").unwrap();
+			let post_container = Selector::parse(".ilFrmPostContentContainer").unwrap();
+			let post_title = Selector::parse(".ilFrmPostTitle").unwrap();
+			let post_content = Selector::parse(".ilFrmPostContent").unwrap();
+			let span_small = Selector::parse("span.small").unwrap();
+			let a = Selector::parse("a").unwrap();
+			for post in html.select(&post) {
+				let title = post.select(&post_title).next().unwrap().text().collect::<String>().replace('/', "-");
+				let author = post.select(&span_small).next().unwrap();
+				let author = author.text().collect::<String>();
+				let author = author.trim().split('|').nth(1).unwrap().trim();
+				let container = post.select(&post_container).next().unwrap();
+				let link = container.select(&a).next().unwrap();
+				let name = format!("{}_{}_{}.html", link.value().attr("name").unwrap(), author, title.trim());
+				let data = post.select(&post_content).next().unwrap();
+				let data = data.inner_html();
+				let mut path = path.clone();
+				path.push(name);
+				let ilias = Arc::clone(&ilias);
+				task::spawn(async move {
+					while *TASKS_RUNNING.lock() > 1 {
+						tokio::time::delay_for(Duration::from_millis(100)).await;
+					}
+					*TASKS_RUNNING.lock() += 1;
+					if ilias.opt.verbose > 1 {
+						println!("Writing to {:?}..", path);
+					}
+					let file = AsyncFile::create(&path).await.unwrap();
+					let mut file = BufWriter::new(file);
+					tokio::io::copy(&mut data.as_bytes(), &mut file).await.unwrap();
+					*TASKS_RUNNING.lock() -= 1;
+				});
+			}
 		},
 		o => {
 			if ilias.opt.verbose > 0 {
