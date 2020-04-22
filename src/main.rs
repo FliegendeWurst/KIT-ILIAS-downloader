@@ -350,7 +350,7 @@ async fn main() {
 			*TASKS_QUEUED.lock() -= 1;
 		});
 	}
-	while *TASKS_RUNNING.lock() > 0 {
+	while *TASKS_QUEUED.lock() > 0 {
 		tokio::time::delay_for(Duration::from_millis(500)).await;
 	}
 }
