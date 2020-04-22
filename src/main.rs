@@ -228,8 +228,7 @@ impl ILIAS {
 		let pass = pass.into();
 		let client = Client::builder()
 			.cookie_store(true)
-			.user_agent("KIT-ILIAS-downloader/0.1.0")
-			.max_idle_per_host(1)
+			.user_agent("KIT-ILIAS-downloader/0.2.0")
 			.build()?;
 		let this = ILIAS {
 			opt, client, user, pass
