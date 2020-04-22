@@ -517,9 +517,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			let mut reader = stream_reader(resp.bytes_stream().map_err(|x| {
 				io::Error::new(io::ErrorKind::Other, x)
 			}));
-			if ilias.opt.verbose > 0 {
-				println!("Saving video to {:?}", path);
-			}
+			println!("Saving video to {:?}", path);
 			let file = AsyncFile::create(&path).await.unwrap();
 			let mut file = BufWriter::new(file);
 			tokio::io::copy(&mut reader, &mut file).await.unwrap();
