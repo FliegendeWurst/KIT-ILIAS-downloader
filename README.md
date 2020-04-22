@@ -42,6 +42,7 @@ OPTIONS:
     -o, --output <output>    Output directory
 ```
 
-## Credits
+## Related programs
 
-Inspired by https://github.com/brantsch/kit-ilias-fuse. Re-implemented because the FUSE downloads were too slow and truncated.
+- https://github.com/brantsch/kit-ilias-fuse (synchronous networking and sometimes (?) truncated downloads)
+- https://github.com/Garmelon/PFERD/ (currently in the middle of a rewrite)
