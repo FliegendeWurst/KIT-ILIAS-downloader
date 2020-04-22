@@ -320,6 +320,7 @@ async fn main() {
 	*PANIC_HOOK.lock() = panic::take_hook();
 	panic::set_hook(Box::new(|info| {
 		*TASKS_RUNNING.lock() -= 1;
+		*TASKS_QUEUED.lock() -= 1;
 		PANIC_HOOK.lock()(info);
 	}));
 	let user = rprompt::prompt_reply_stdout("Username: ").unwrap();
@@ -339,12 +340,14 @@ async fn main() {
 	while let Some((path, obj)) = queue.pop_front() {
 		let ilias = Arc::clone(&ilias);
 		task::spawn(async {
-			while *TASKS_RUNNING.lock() > ilias.opt.jobs {
+			*TASKS_QUEUED.lock() += 1;
+			while *TASKS_RUNNING.lock() >= ilias.opt.jobs {
 				tokio::time::delay_for(Duration::from_millis(100)).await;
 			}
 			*TASKS_RUNNING.lock() += 1;
 			process(ilias, path, obj).await;
 			*TASKS_RUNNING.lock() -= 1;
+			*TASKS_QUEUED.lock() -= 1;
 		});
 	}
 	while *TASKS_RUNNING.lock() > 0 {
@@ -353,6 +356,7 @@ async fn main() {
 }
 
 lazy_static!{
+	static ref TASKS_QUEUED: Mutex<usize> = Mutex::default();
 	static ref TASKS_RUNNING: Mutex<usize> = Mutex::default();
 
 	static ref PANIC_HOOK: Mutex<Box<dyn Fn(&panic::PanicInfo) + Sync + Send + 'static>> = Mutex::new(Box::new(|_| {}));
@@ -377,12 +381,14 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 				path.push(item.name());
 				let ilias = Arc::clone(&ilias);
 				task::spawn(async {
-					while *TASKS_RUNNING.lock() > ilias.opt.jobs {
+					*TASKS_QUEUED.lock() += 1;
+					while *TASKS_RUNNING.lock() >= ilias.opt.jobs {
 						tokio::time::delay_for(Duration::from_millis(100)).await;
 					}
 					*TASKS_RUNNING.lock() += 1;
 					process(ilias, path, item).await;
 					*TASKS_RUNNING.lock() -= 1;
+					*TASKS_QUEUED.lock() -= 1;
 				});
 			}
 		},
@@ -398,12 +404,14 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 				path.push(item.name());
 				let ilias = Arc::clone(&ilias);
 				task::spawn(async {
-					while *TASKS_RUNNING.lock() > ilias.opt.jobs {
+					*TASKS_QUEUED.lock() += 1;
+					while *TASKS_RUNNING.lock() >= ilias.opt.jobs {
 						tokio::time::delay_for(Duration::from_millis(100)).await;
 					}
 					*TASKS_RUNNING.lock() += 1;
 					process(ilias, path, item).await;
 					*TASKS_RUNNING.lock() -= 1;
+					*TASKS_QUEUED.lock() -= 1;
 				});
 			}
 		},
@@ -469,12 +477,14 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 					};
 					let ilias = Arc::clone(&ilias);
 					task::spawn(async {
-						while *TASKS_RUNNING.lock() > ilias.opt.jobs {
+						*TASKS_QUEUED.lock() += 1;
+						while *TASKS_RUNNING.lock() >= ilias.opt.jobs {
 							tokio::time::delay_for(Duration::from_millis(100)).await;
 						}
 						*TASKS_RUNNING.lock() += 1;
 						process(ilias, path, video).await;
 						*TASKS_RUNNING.lock() -= 1;
+						*TASKS_QUEUED.lock() -= 1;
 					});
 				}
 				
@@ -563,12 +573,14 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 				path.push(name);
 				let ilias = Arc::clone(&ilias);
 				task::spawn(async {
-					while *TASKS_RUNNING.lock() > ilias.opt.jobs {
+					*TASKS_QUEUED.lock() += 1;
+					while *TASKS_RUNNING.lock() >= ilias.opt.jobs {
 						tokio::time::delay_for(Duration::from_millis(100)).await;
 					}
 					*TASKS_RUNNING.lock() += 1;
 					process(ilias, path, object).await;
 					*TASKS_RUNNING.lock() -= 1;
+					*TASKS_QUEUED.lock() -= 1;
 				});
 			}
 		},
@@ -610,7 +622,8 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 				path.push(name);
 				let ilias = Arc::clone(&ilias);
 				task::spawn(async move {
-					while *TASKS_RUNNING.lock() > ilias.opt.jobs {
+					*TASKS_QUEUED.lock() += 1;
+					while *TASKS_RUNNING.lock() >= ilias.opt.jobs {
 						tokio::time::delay_for(Duration::from_millis(100)).await;
 					}
 					*TASKS_RUNNING.lock() += 1;
@@ -621,6 +634,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 					let mut file = BufWriter::new(file);
 					tokio::io::copy(&mut data.as_bytes(), &mut file).await.unwrap();
 					*TASKS_RUNNING.lock() -= 1;
+					*TASKS_QUEUED.lock() -= 1;
 				});
 			}
 		},
