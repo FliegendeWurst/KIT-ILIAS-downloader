@@ -340,7 +340,7 @@ async fn main() {
 	while let Some((path, obj)) = queue.pop_front() {
 		let ilias = Arc::clone(&ilias);
 		task::spawn(async {
-			while *TASKS_RUNNING.lock() > 1 {
+			while *TASKS_RUNNING.lock() > ilias.opt.jobs {
 				tokio::time::delay_for(Duration::from_millis(100)).await;
 			}
 			*TASKS_RUNNING.lock() += 1;
@@ -378,7 +378,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 				path.push(item.name());
 				let ilias = Arc::clone(&ilias);
 				task::spawn(async {
-					while *TASKS_RUNNING.lock() > 1 {
+					while *TASKS_RUNNING.lock() > ilias.opt.jobs {
 						tokio::time::delay_for(Duration::from_millis(100)).await;
 					}
 					*TASKS_RUNNING.lock() += 1;
@@ -399,7 +399,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 				path.push(item.name());
 				let ilias = Arc::clone(&ilias);
 				task::spawn(async {
-					while *TASKS_RUNNING.lock() > 1 {
+					while *TASKS_RUNNING.lock() > ilias.opt.jobs {
 						tokio::time::delay_for(Duration::from_millis(100)).await;
 					}
 					*TASKS_RUNNING.lock() += 1;
@@ -470,7 +470,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 					};
 					let ilias = Arc::clone(&ilias);
 					task::spawn(async {
-						while *TASKS_RUNNING.lock() > 1 {
+						while *TASKS_RUNNING.lock() > ilias.opt.jobs {
 							tokio::time::delay_for(Duration::from_millis(100)).await;
 						}
 						*TASKS_RUNNING.lock() += 1;
@@ -563,7 +563,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 				path.push(name);
 				let ilias = Arc::clone(&ilias);
 				task::spawn(async {
-					while *TASKS_RUNNING.lock() > 1 {
+					while *TASKS_RUNNING.lock() > ilias.opt.jobs {
 						tokio::time::delay_for(Duration::from_millis(100)).await;
 					}
 					*TASKS_RUNNING.lock() += 1;
@@ -607,7 +607,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 				path.push(name);
 				let ilias = Arc::clone(&ilias);
 				task::spawn(async move {
-					while *TASKS_RUNNING.lock() > 1 {
+					while *TASKS_RUNNING.lock() > ilias.opt.jobs {
 						tokio::time::delay_for(Duration::from_millis(100)).await;
 					}
 					*TASKS_RUNNING.lock() += 1;
@@ -632,16 +632,16 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 #[derive(Debug, StructOpt)]
 #[structopt(name = "KIT-ILIAS-downloader")]
 struct Opt {
-    /// Do not download files
-    #[structopt(short, long)]
+	/// Do not download files
+	#[structopt(short, long)]
 	skip_files: bool,
 	
 	/// Do not download Opencast videos
-    #[structopt(short, long)]
+	#[structopt(short, long)]
 	no_videos: bool,
 	
 	/// Re-download already present files
-    #[structopt(short)]
+	#[structopt(short)]
 	force: bool,
 	
 	/// Verbose logging (print objects downloaded)
@@ -649,6 +649,10 @@ struct Opt {
 	verbose: usize,
 
 	/// Output directory
-    #[structopt(short, long, parse(from_os_str))]
-    output: PathBuf,
+	#[structopt(short, long, parse(from_os_str))]
+	output: PathBuf,
+
+	/// Parallel download jobs
+	#[structopt(short, long, default_value = "1")]
+	jobs: usize,
 }
