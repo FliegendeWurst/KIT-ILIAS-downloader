@@ -525,6 +525,9 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			tokio::io::copy(&mut reader, &mut file).await.unwrap();
 		},
 		Forum { url, .. } => {
+			if !ilias.opt.forum {
+				return;
+			}
 			if let Err(e) = fs::create_dir(&path) {
 				if e.kind() != io::ErrorKind::AlreadyExists {
 					println!("error: {:?}", e);
@@ -573,6 +576,9 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			}
 		},
 		Thread { url } => {
+			if !ilias.opt.forum {
+				return;
+			}
 			if let Err(e) = fs::create_dir(&path) {
 				if e.kind() != io::ErrorKind::AlreadyExists {
 					println!("error: {:?}", e);
@@ -639,6 +645,10 @@ struct Opt {
 	/// Do not download Opencast videos
 	#[structopt(short, long)]
 	no_videos: bool,
+
+	/// Download forum content
+	#[structopt(short = "t", long)]
+	forum: bool,
 	
 	/// Re-download already present files
 	#[structopt(short)]
