@@ -229,6 +229,7 @@ impl ILIAS {
 		let client = Client::builder()
 			.cookie_store(true)
 			.user_agent(concat!("KIT-ILIAS-downloader/", env!("CARGO_PKG_VERSION")))
+			.timeout(Duration::from_secs(11))
 			.build()?;
 		let this = ILIAS {
 			opt, client, user, pass
@@ -304,9 +305,40 @@ impl ILIAS {
 		Ok(Html::parse_document(&text))
 	}
 
+	async fn get_html_fragment(&self, url: &str) -> Result<Html> {
+		let text = self.client.get(url).send().await?.text().await?;
+		let html = Html::parse_fragment(&text);
+		// TODO: have this above too
+		if html.select(&alert_danger).next().is_some() {
+			//println!("{}", text);
+			Err("ILIAS error".into())
+		} else {
+			Ok(html)
+		}
+	}
+
 	async fn get_course_content(&self, url: &URL) -> Result<Vec<Object>> {
 		let html = self.get_html(&format!("{}{}", ILIAS_URL, url.url)).await?;
 		Ok(ILIAS::get_items(&html)?)
+	}
+
+	async fn get_course_content_tree(&self, ref_id: &str) -> Result<Vec<Object>> {
+		let url = format!(
+			"{}ilias.php?ref_id={}&cmdClass=ilobjrootfoldergui&cmd=showRepTree&cmdNode=uf:o4&baseClass=ilRepositoryGUI&cmdMode=asynch&exp_cmd=getNodeAsync&node_id=exp_node_rep_exp_{}&exp_cont=il_expl2_jstree_cont_rep_exp&searchterm=",
+			ILIAS_URL, ref_id, ref_id
+		);
+		println!("Loading {:?}..", url);
+		let html = self.get_html_fragment(&url).await?;
+		let mut items = Vec::new();
+		for link in html.select(&a) {
+			let href = link.value().attr("href").unwrap_or("");
+			if href == "" {
+				// disabled course
+				continue;
+			}
+			items.push(Object::from_link(link, link));
+		}
+		Ok(items)
 	}
 
 	async fn download(&self, url: &str) -> Result<reqwest::Response> {
@@ -335,6 +367,9 @@ async fn main() {
 			std::process::exit(77);
 		}
 	};
+	// this is useless, further requests still error
+	//println!("Loading root..");
+	//ilias.client.get("https://ilias.studium.kit.edu/ilias.php?ref_id=1&cmd=showRepTree&cmdClass=ilobjrootfoldergui&cmdNode=uf:o4&baseClass=ilRepositoryGUI&cmdMode=asynch&exp_cmd=getNodeAsync&node_id=&exp_cont=il_expl2_jstree_cont_rep_exp&searchterm=").send().await.unwrap();
 	let ilias = Arc::new(ilias);
 	let desktop = ilias.personal_desktop().await.unwrap();
 	for item in desktop.items {
@@ -346,6 +381,7 @@ async fn main() {
 		});
 	}
 	// TODO: do this with tokio
+	// https://github.com/tokio-rs/tokio/issues/2039
 	while *TASKS_QUEUED.lock() > 0 {
 		tokio::time::delay_for(Duration::from_millis(500)).await;
 	}
@@ -372,36 +408,52 @@ fn process_gracefully(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std
 	*TASKS_QUEUED.lock() -= 1;
 }}
 
-// see https://github.com/rust-lang/rust/issues/53690#issuecomment-418911229
-//async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) {
 #[allow(non_upper_case_globals)]
-fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::Future<Output = Result<()>> + Send { async move {
+mod selectors {
+	use lazy_static::lazy_static;
+	use scraper::Selector;
 	// construct CSS selectors once
 	lazy_static!{
-		static ref a: Selector = Selector::parse("a").unwrap();
-		static ref a_target_blank: Selector = Selector::parse(r#"a[target="_blank"]"#).unwrap();
-		static ref table: Selector = Selector::parse("table").unwrap();
-		static ref links_in_table: Selector = Selector::parse("tbody tr td a").unwrap();
-		static ref td: Selector = Selector::parse("td").unwrap();
-		static ref tr: Selector = Selector::parse("tr").unwrap();
-		static ref post_row: Selector = Selector::parse(".ilFrmPostRow").unwrap();
-		static ref post_title: Selector = Selector::parse(".ilFrmPostTitle").unwrap();
-		static ref post_container: Selector = Selector::parse(".ilFrmPostContentContainer").unwrap();
-		static ref post_content: Selector = Selector::parse(".ilFrmPostContent").unwrap();
-		static ref span_small: Selector = Selector::parse("span.small").unwrap();
-		static ref forum_pages: Selector = Selector::parse("div.ilTableNav > table > tbody > tr > td > a").unwrap();
+		pub static ref a: Selector = Selector::parse("a").unwrap();
+		pub static ref a_target_blank: Selector = Selector::parse(r#"a[target="_blank"]"#).unwrap();
+		pub static ref table: Selector = Selector::parse("table").unwrap();
+		pub static ref links_in_table: Selector = Selector::parse("tbody tr td a").unwrap();
+		pub static ref td: Selector = Selector::parse("td").unwrap();
+		pub static ref tr: Selector = Selector::parse("tr").unwrap();
+		pub static ref post_row: Selector = Selector::parse(".ilFrmPostRow").unwrap();
+		pub static ref post_title: Selector = Selector::parse(".ilFrmPostTitle").unwrap();
+		pub static ref post_container: Selector = Selector::parse(".ilFrmPostContentContainer").unwrap();
+		pub static ref post_content: Selector = Selector::parse(".ilFrmPostContent").unwrap();
+		pub static ref span_small: Selector = Selector::parse("span.small").unwrap();
+		pub static ref forum_pages: Selector = Selector::parse("div.ilTableNav > table > tbody > tr > td > a").unwrap();
+		pub static ref alert_danger: Selector = Selector::parse("div.alert-danger").unwrap();
 	}
+}
+use crate::selectors::*;
+
+// see https://github.com/rust-lang/rust/issues/53690#issuecomment-418911229
+//async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) {
+fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::Future<Output = Result<()>> + Send { async move {
 	if ilias.opt.verbose > 0 {
 		println!("Syncing {} {}..", obj.kind(), path.strip_prefix(&ilias.opt.output).unwrap().to_string_lossy());
 	}
 	match &obj {
-		Course { url, .. } => {
+		Course { url, name } => {
 			if let Err(e) = fs::create_dir(&path) {
 				if e.kind() != io::ErrorKind::AlreadyExists {
 					Err(e)?;
 				}
 			}
-			let content = ilias.get_course_content(&url).await?;
+			let content_tree = ilias.get_course_content_tree(&url.ref_id).await;
+			let content = match content_tree {
+				Ok(tree) => tree,
+				Err(e) => {
+					// some folders are hidden and can only be found via the RSS feed / recent activity / content tree sidebar
+					// TODO: this is never the case for folders?
+					println!("Warning: {:?} falling back to incomplete course content extractor! {}", name, e.display_chain());
+					ilias.get_course_content(&url).await?
+				}
+			};
 			for item in content {
 				let mut path = path.clone();
 				path.push(item.name());
