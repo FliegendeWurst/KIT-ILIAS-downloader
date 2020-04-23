@@ -1,4 +1,4 @@
-use futures_util::stream::TryStreamExt;
+use futures_util::stream::{StreamExt, TryStreamExt};
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use regex::Regex;
@@ -550,7 +550,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 					let html = Html::parse_document(&html_text);
 					//https://ilias.studium.kit.edu/ilias.php?ref_id=122&cmdClass=ilobjforumgui&frm_tt_e39_122_trows=800&cmd=showThreads&cmdNode=uf:lg&baseClass=ilrepositorygui
 					let url = {
-						let t800 = html.select(&a).filter(|x| x.value().attr("href").unwrap_or("").contains("trows=800")).next().expect("can't find forum thread count selector");
+						let t800 = html.select(&a).filter(|x| x.value().attr("href").unwrap_or("").contains("trows=800")).next().unwrap_or_else(|| panic!("can't find forum thread count selector in {:?}", path));
 						t800.value().attr("href").unwrap()
 					};
 					format!("{}{}", ILIAS_URL, url)
@@ -572,6 +572,18 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 				let mut path = path.clone();
 				let name = format!("{}_{}", object.url().thr_pk.as_ref().expect("thr_pk not found for thread"), link.text().collect::<String>().replace('/', "-").trim());
 				path.push(name);
+				// TODO: set modification date?
+				let saved_posts = {
+					match fs::read_dir(&path) {
+						Ok(stream) => stream.count(),
+						Err(_) => 0
+					}
+				};
+				let available_posts = cells[3].text().next().unwrap().trim().parse::<usize>().unwrap();
+				if available_posts <= saved_posts && !ilias.opt.force {
+					continue;
+				}
+				println!("New posts in {:?}..", path);
 				let ilias = Arc::clone(&ilias);
 				task::spawn(async {
 					*TASKS_QUEUED.lock() += 1;
@@ -584,6 +596,10 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 					*TASKS_QUEUED.lock() -= 1;
 				});
 			}
+			let pages = Selector::parse("div.ilTableNav > table > tbody > tr > td > a").unwrap();
+			if html.select(&pages).count() > 0 {
+				println!("Ignoring older threads (801st+) in {:?}..", path);
+			}
 		},
 		Thread { url } => {
 			if !ilias.opt.forum {
@@ -592,10 +608,6 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			if let Err(e) = fs::create_dir(&path) {
 				if e.kind() != io::ErrorKind::AlreadyExists {
 					println!("error: {:?}", e);
-				}
-				// skip already downloaded
-				// TODO: compare modification date
-				if !ilias.opt.force {
 					return;
 				}
 			}
@@ -637,6 +649,33 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 					*TASKS_RUNNING.lock() -= 1;
 					*TASKS_QUEUED.lock() -= 1;
 				});
+			}
+			// pagination
+			let table = Selector::parse("table").unwrap();
+			if let Some(pages) = html.select(&table).next() {
+				let links_in_table = Selector::parse("tbody tr td a").unwrap();
+				if let Some(last) = pages.select(&links_in_table).last() {
+					let text = last.text().collect::<String>();
+					if text.trim() == ">>" {
+						// not last page yet
+						let ilias = Arc::clone(&ilias);
+						let next_page = Thread {
+							url: URL::from_href(last.value().attr("href").unwrap())
+						};
+						task::spawn(async move {
+							*TASKS_QUEUED.lock() += 1;
+							while *TASKS_RUNNING.lock() >= ilias.opt.jobs {
+								tokio::time::delay_for(Duration::from_millis(100)).await;
+							}
+							*TASKS_RUNNING.lock() += 1;
+							process(ilias, path, next_page).await;
+							*TASKS_RUNNING.lock() -= 1;
+							*TASKS_QUEUED.lock() -= 1;
+						});
+					}
+				} else {
+					println!("error: unable to find pagination links");
+				}
 			}
 		},
 		o => {
