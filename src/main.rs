@@ -1,4 +1,5 @@
-use futures_util::stream::{StreamExt, TryStreamExt};
+use error_chain::ChainedError;
+use futures_util::stream::TryStreamExt;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use regex::Regex;
@@ -11,7 +12,6 @@ use tokio::io::{stream_reader, BufWriter};
 use tokio::task;
 use url::Url;
 
-use std::collections::VecDeque;
 use std::default::Default;
 use std::fs;
 use std::io;
@@ -228,12 +228,12 @@ impl ILIAS {
 		let pass = pass.into();
 		let client = Client::builder()
 			.cookie_store(true)
-			.user_agent("KIT-ILIAS-downloader/0.2.0")
+			.user_agent(concat!("KIT-ILIAS-downloader/", env!("CARGO_PKG_VERSION")))
 			.build()?;
 		let this = ILIAS {
 			opt, client, user, pass
 		};
-		println!("Logging into Shibboleth..");
+		println!("Logging into ILIAS using KIT account..");
 		let session_establishment = this.client
 			.post("https://ilias.studium.kit.edu/Shibboleth.sso/Login")
 			.form(&json!({
@@ -243,7 +243,7 @@ impl ILIAS {
 				"home_organization_selection": "Mit KIT-Account anmelden"
 			}))
 			.send().await?;
-		println!("Logging into identity provider..");
+		println!("Logging into Shibboleth..");
 		let login_response = this.client
 			.post(session_establishment.url().clone())
 			.form(&json!({
@@ -264,9 +264,9 @@ impl ILIAS {
 			login_soup = BeautifulSoup(otp_response.text, 'lxml')
 		*/
 		let saml = Selector::parse(r#"input[name="SAMLResponse"]"#).unwrap();
-		let saml = dom.select(&saml).next().expect("no SAML response, incorrect password?");
+		let saml = dom.select(&saml).next().ok_or::<ErrorKind>("no SAML response, incorrect password?".into())?;
 		let relay_state = Selector::parse(r#"input[name="RelayState"]"#).unwrap();
-		let relay_state = dom.select(&relay_state).next().expect("no relay state");
+		let relay_state = dom.select(&relay_state).next().ok_or::<ErrorKind>("no relay state".into())?;
 		println!("Logging into ILIAS..");
 		this.client
 			.post("https://ilias.studium.kit.edu/Shibboleth.sso/SAML2/POST")
@@ -279,20 +279,23 @@ impl ILIAS {
 		Ok(this)
 	}
 
-	async fn personal_desktop(&mut self) -> Result<Dashboard> {
+	async fn personal_desktop(&self) -> Result<Dashboard> {
 		let html = self.get_html("https://ilias.studium.kit.edu/ilias.php?baseClass=ilPersonalDesktopGUI&cmd=jumpToSelectedItems").await?;
-		let items = ILIAS::get_items(&html);
+		let items = ILIAS::get_items(&html)?;
 		Ok(Dashboard {
 			items
 		})
 	}
 
-	fn get_items(html: &Html) -> Vec<Object> {
+	fn get_items(html: &Html) -> Result<Vec<Object>> {
 		let container_items = Selector::parse("div.il_ContainerListItem").unwrap();
 		let container_item_title = Selector::parse("a.il_ContainerItemTitle").unwrap();
 		html.select(&container_items).map(|item| {
-			let link = item.select(&container_item_title).next().unwrap();
-			Object::from_link(item, link)
+			item
+				.select(&container_item_title)
+				.next()
+				.map(|link| Object::from_link(item, link))
+				.ok_or::<Error>("can't find link".into())
 		}).collect()
 	}
 
@@ -303,7 +306,7 @@ impl ILIAS {
 
 	async fn get_course_content(&self, url: &URL) -> Result<Vec<Object>> {
 		let html = self.get_html(&format!("{}{}", ILIAS_URL, url.url)).await?;
-		Ok(ILIAS::get_items(&html))
+		Ok(ILIAS::get_items(&html)?)
 	}
 
 	async fn download(&self, url: &str) -> Result<reqwest::Response> {
@@ -325,31 +328,24 @@ async fn main() {
 	}));
 	let user = rprompt::prompt_reply_stdout("Username: ").unwrap();
 	let pass = rpassword::read_password_from_tty(Some("Password: ")).unwrap();
-	let mut ilias = match ILIAS::login::<_, String>(opt, user, pass).await {
+	let ilias = match ILIAS::login::<_, String>(opt, user, pass).await {
 		Ok(ilias) => ilias,
-		Err(e) => panic!("error: {:?}", e)
+		Err(e) => {
+			print!("{}", e.display_chain());
+			std::process::exit(77);
+		}
 	};
+	let ilias = Arc::new(ilias);
 	let desktop = ilias.personal_desktop().await.unwrap();
-	let mut queue = VecDeque::new();
 	for item in desktop.items {
 		let mut path = ilias.opt.output.clone();
 		path.push(item.name());
-		queue.push_back((path, item));
-	}
-	let ilias = Arc::new(ilias);
-	while let Some((path, obj)) = queue.pop_front() {
 		let ilias = Arc::clone(&ilias);
 		task::spawn(async {
-			*TASKS_QUEUED.lock() += 1;
-			while *TASKS_RUNNING.lock() >= ilias.opt.jobs {
-				tokio::time::delay_for(Duration::from_millis(100)).await;
-			}
-			*TASKS_RUNNING.lock() += 1;
-			process(ilias, path, obj).await;
-			*TASKS_RUNNING.lock() -= 1;
-			*TASKS_QUEUED.lock() -= 1;
+			process_gracefully(ilias, path, item).await;
 		});
 	}
+	// TODO: do this with tokio
 	while *TASKS_QUEUED.lock() > 0 {
 		tokio::time::delay_for(Duration::from_millis(500)).await;
 	}
@@ -362,9 +358,39 @@ lazy_static!{
 	static ref PANIC_HOOK: Mutex<Box<dyn Fn(&panic::PanicInfo) + Sync + Send + 'static>> = Mutex::new(Box::new(|_| {}));
 }
 
+fn process_gracefully(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::Future<Output = ()> + Send { async move {
+	*TASKS_QUEUED.lock() += 1;
+	while *TASKS_RUNNING.lock() >= ilias.opt.jobs {
+		tokio::time::delay_for(Duration::from_millis(100)).await;
+	}
+	*TASKS_RUNNING.lock() += 1;
+	let path_text = format!("{:?}", path);
+	if let Err(e) = process(ilias, path, obj).await {
+		print!("Error syncing {}: {}", path_text, e.display_chain());
+	}
+	*TASKS_RUNNING.lock() -= 1;
+	*TASKS_QUEUED.lock() -= 1;
+}}
+
 // see https://github.com/rust-lang/rust/issues/53690#issuecomment-418911229
 //async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) {
-fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::Future<Output = ()> + Send { async move {
+#[allow(non_upper_case_globals)]
+fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::Future<Output = Result<()>> + Send { async move {
+	// construct CSS selectors once
+	lazy_static!{
+		static ref a: Selector = Selector::parse("a").unwrap();
+		static ref a_target_blank: Selector = Selector::parse(r#"a[target="_blank"]"#).unwrap();
+		static ref table: Selector = Selector::parse("table").unwrap();
+		static ref links_in_table: Selector = Selector::parse("tbody tr td a").unwrap();
+		static ref td: Selector = Selector::parse("td").unwrap();
+		static ref tr: Selector = Selector::parse("tr").unwrap();
+		static ref post_row: Selector = Selector::parse(".ilFrmPostRow").unwrap();
+		static ref post_title: Selector = Selector::parse(".ilFrmPostTitle").unwrap();
+		static ref post_container: Selector = Selector::parse(".ilFrmPostContentContainer").unwrap();
+		static ref post_content: Selector = Selector::parse(".ilFrmPostContent").unwrap();
+		static ref span_small: Selector = Selector::parse("span.small").unwrap();
+		static ref forum_pages: Selector = Selector::parse("div.ilTableNav > table > tbody > tr > td > a").unwrap();
+	}
 	if ilias.opt.verbose > 0 {
 		println!("Syncing {} {}..", obj.kind(), path.strip_prefix(&ilias.opt.output).unwrap().to_string_lossy());
 	}
@@ -372,91 +398,69 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 		Course { url, .. } => {
 			if let Err(e) = fs::create_dir(&path) {
 				if e.kind() != io::ErrorKind::AlreadyExists {
-					println!("error: {:?}", e);
+					Err(e)?;
 				}
 			}
-			let content = ilias.get_course_content(&url).await.unwrap();
+			let content = ilias.get_course_content(&url).await?;
 			for item in content {
 				let mut path = path.clone();
 				path.push(item.name());
 				let ilias = Arc::clone(&ilias);
 				task::spawn(async {
-					*TASKS_QUEUED.lock() += 1;
-					while *TASKS_RUNNING.lock() >= ilias.opt.jobs {
-						tokio::time::delay_for(Duration::from_millis(100)).await;
-					}
-					*TASKS_RUNNING.lock() += 1;
-					process(ilias, path, item).await;
-					*TASKS_RUNNING.lock() -= 1;
-					*TASKS_QUEUED.lock() -= 1;
+					process_gracefully(ilias, path, item).await;
 				});
 			}
 		},
 		Folder { url, .. } => {
 			if let Err(e) = fs::create_dir(&path) {
 				if e.kind() != io::ErrorKind::AlreadyExists {
-					println!("error: {:?}", e);
+					Err(e)?;
 				}
 			}
-			let content = ilias.get_course_content(&url).await.unwrap();
+			let content = ilias.get_course_content(&url).await?;
 			for item in content {
 				let mut path = path.clone();
 				path.push(item.name());
 				let ilias = Arc::clone(&ilias);
 				task::spawn(async {
-					*TASKS_QUEUED.lock() += 1;
-					while *TASKS_RUNNING.lock() >= ilias.opt.jobs {
-						tokio::time::delay_for(Duration::from_millis(100)).await;
-					}
-					*TASKS_RUNNING.lock() += 1;
-					process(ilias, path, item).await;
-					*TASKS_RUNNING.lock() -= 1;
-					*TASKS_QUEUED.lock() -= 1;
+					process_gracefully(ilias, path, item).await;
 				});
 			}
 		},
 		File { url, .. } => {
 			if ilias.opt.skip_files {
-				return;
+				return Ok(());
 			}
 			if !ilias.opt.force && fs::metadata(&path).is_ok() {
 				if ilias.opt.verbose > 1 {
 					println!("Skipping download, file exists already");
 				}
-				return;
+				return Ok(());
 			}
-			let data = ilias.download(&url.url).await;
-			match data {
-				Ok(resp) => {
-					let mut reader = stream_reader(resp.bytes_stream().map_err(|x| {
-						io::Error::new(io::ErrorKind::Other, x)
-					}));
-					println!("Writing to {:?}..", path);
-					let file = AsyncFile::create(&path).await.unwrap();
-					let mut file = BufWriter::new(file);
-					tokio::io::copy(&mut reader, &mut file).await.unwrap();
-				},
-				Err(e) => println!("error: {:?}", e)
-			}
+			let data = ilias.download(&url.url).await?;
+			let mut reader = stream_reader(data.bytes_stream().map_err(|x| {
+				io::Error::new(io::ErrorKind::Other, x)
+			}));
+			println!("Writing to {:?}..", path);
+			let file = AsyncFile::create(&path).await?;
+			let mut file = BufWriter::new(file);
+			tokio::io::copy(&mut reader, &mut file).await?;
 		},
 		PluginDispatch { url, .. } => {
 			if ilias.opt.no_videos {
-				return;
+				return Ok(());
 			}
 			if let Err(e) = fs::create_dir(&path) {
 				if e.kind() != io::ErrorKind::AlreadyExists {
-					println!("error: {:?}", e);
+					Err(e)?;
 				}
 			}
 			let list_url = format!("{}ilias.php?ref_id={}&cmdClass=xocteventgui&cmdNode=n7:mz:14p&baseClass=ilObjPluginDispatchGUI&lang=de&limit=20&cmd=asyncGetTableGUI&cmdMode=asynch", ILIAS_URL, url.ref_id);
 			let data = ilias.download(&list_url);
-			let html = data.await.unwrap().text().await.unwrap();
+			let html = data.await?.text().await?;
 			let html = Html::parse_fragment(&html);
-			let tr = Selector::parse("tr").unwrap();
-			let td = Selector::parse("td").unwrap();
-			let a = Selector::parse(r#"a[target="_blank"]"#).unwrap();
 			for row in html.select(&tr) {
-				let link = row.select(&a).next();
+				let link = row.select(&a_target_blank).next();
 				if link.is_none() {
 					continue;
 				}
@@ -478,14 +482,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 					};
 					let ilias = Arc::clone(&ilias);
 					task::spawn(async {
-						*TASKS_QUEUED.lock() += 1;
-						while *TASKS_RUNNING.lock() >= ilias.opt.jobs {
-							tokio::time::delay_for(Duration::from_millis(100)).await;
-						}
-						*TASKS_RUNNING.lock() += 1;
-						process(ilias, path, video).await;
-						*TASKS_RUNNING.lock() -= 1;
-						*TASKS_QUEUED.lock() -= 1;
+						process_gracefully(ilias, path, video).await;
 					});
 				}
 				
@@ -496,81 +493,82 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 				static ref XOCT_REGEX: Regex = Regex::new(r#"(?m)<script>\s+xoctPaellaPlayer\.init\(([\s\S]+)\)\s+</script>"#).unwrap();
 			}
 			if ilias.opt.no_videos {
-				return;
+				return Ok(());
 			}
 			if !ilias.opt.force && fs::metadata(&path).is_ok() {
 				if ilias.opt.verbose > 1 {
 					println!("Skipping download, file exists already");
 				}
-				return;
+				return Ok(());
 			}
 			let url = format!("{}{}", ILIAS_URL, url);
 			let data = ilias.download(&url);
-			let html = data.await.unwrap().text().await.unwrap();
+			let html = data.await?.text().await?;
 			if ilias.opt.verbose > 1 {
 				println!("{}", html);
 			}
 			let json: serde_json::Value = {
 				let mut json_capture = XOCT_REGEX.captures_iter(&html);
-				let json = &json_capture.next().unwrap()[1];
+				let json = &json_capture.next().ok_or::<ErrorKind>("xoct player json not found".into())?[1];
 				if ilias.opt.verbose > 1 {
 					println!("{}", json);
 				}
-				let json = json.split(",\n").nth(0).unwrap();
-				serde_json::from_str(&json.trim()).unwrap()
+				let json = json.split(",\n").nth(0).ok_or::<ErrorKind>("invalid xoct player json".into())?;
+				serde_json::from_str(&json.trim())?
 			};
 			if ilias.opt.verbose > 1 {
 				println!("{}", json);
 			}
 			let url = json["streams"][0]["sources"]["mp4"][0]["src"].as_str().unwrap();
-			let resp = ilias.download(&url).await.unwrap();
+			let resp = ilias.download(&url).await?;
 			let mut reader = stream_reader(resp.bytes_stream().map_err(|x| {
 				io::Error::new(io::ErrorKind::Other, x)
 			}));
 			println!("Saving video to {:?}", path);
-			let file = AsyncFile::create(&path).await.unwrap();
+			let file = AsyncFile::create(&path).await?;
 			let mut file = BufWriter::new(file);
-			tokio::io::copy(&mut reader, &mut file).await.unwrap();
+			tokio::io::copy(&mut reader, &mut file).await?;
 		},
 		Forum { url, .. } => {
 			if !ilias.opt.forum {
-				return;
+				return Ok(());
 			}
 			if let Err(e) = fs::create_dir(&path) {
 				if e.kind() != io::ErrorKind::AlreadyExists {
-					println!("error: {:?}", e);
+					Err(e)?;
 				}
 			}
 			let url = format!("{}ilias.php?ref_id={}&cmd=showThreads&cmdClass=ilrepositorygui&cmdNode=uf&baseClass=ilrepositorygui", ILIAS_URL, url.ref_id);
 			let html = {
-				let a = Selector::parse("a").unwrap();
 				let data = ilias.download(&url);
-				let html_text = data.await.unwrap().text().await.unwrap();
+				let html_text = data.await?.text().await?;
 				let url = {
 					let html = Html::parse_document(&html_text);
 					//https://ilias.studium.kit.edu/ilias.php?ref_id=122&cmdClass=ilobjforumgui&frm_tt_e39_122_trows=800&cmd=showThreads&cmdNode=uf:lg&baseClass=ilrepositorygui
-					let url = {
-						let t800 = html.select(&a).filter(|x| x.value().attr("href").unwrap_or("").contains("trows=800")).next().unwrap_or_else(|| panic!("can't find forum thread count selector in {:?}", path));
-						t800.value().attr("href").unwrap()
-					};
+					let url = html
+						.select(&a)
+						.flat_map(|x| x.value().attr("href"))
+						.filter(|x| x.contains("trows=800"))
+						.next()
+						.ok_or::<ErrorKind>("can't find forum thread count selector (empty forum?)".into())?;
 					format!("{}{}", ILIAS_URL, url)
 				};
 				let data = ilias.download(&url);
-				let html = data.await.unwrap().text().await.unwrap();
+				let html = data.await?.text().await?;
 				Html::parse_document(&html)
 			};
-			let a = Selector::parse("a").unwrap();
-			let tr = Selector::parse("tr").unwrap();
-			let td = Selector::parse("td").unwrap();
 			for row in html.select(&tr) {
 				let cells = row.select(&td).collect::<Vec<_>>();
 				if cells.len() != 6 {
 					continue;
 				}
-				let link = cells[1].select(&a).next().unwrap();
+				let link = cells[1].select(&a).next().ok_or::<ErrorKind>("thread link not found".into())?;
 				let object = Object::from_link(link, link);
 				let mut path = path.clone();
-				let name = format!("{}_{}", object.url().thr_pk.as_ref().expect("thr_pk not found for thread"), link.text().collect::<String>().replace('/', "-").trim());
+				let name = format!("{}_{}",
+					object.url().thr_pk.as_ref().ok_or::<ErrorKind>("thr_pk not found for thread".into())?,
+					link.text().collect::<String>().replace('/', "-").trim()
+				);
 				path.push(name);
 				// TODO: set modification date?
 				let saved_posts = {
@@ -579,49 +577,34 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 						Err(_) => 0
 					}
 				};
-				let available_posts = cells[3].text().next().unwrap().trim().parse::<usize>().unwrap();
+				let available_posts = cells[3].text().next().unwrap().trim().parse::<usize>().chain_err(|| "parsing post count failed")?;
 				if available_posts <= saved_posts && !ilias.opt.force {
 					continue;
 				}
 				println!("New posts in {:?}..", path);
 				let ilias = Arc::clone(&ilias);
 				task::spawn(async {
-					*TASKS_QUEUED.lock() += 1;
-					while *TASKS_RUNNING.lock() >= ilias.opt.jobs {
-						tokio::time::delay_for(Duration::from_millis(100)).await;
-					}
-					*TASKS_RUNNING.lock() += 1;
-					process(ilias, path, object).await;
-					*TASKS_RUNNING.lock() -= 1;
-					*TASKS_QUEUED.lock() -= 1;
+					process_gracefully(ilias, path, object).await;
 				});
 			}
-			let pages = Selector::parse("div.ilTableNav > table > tbody > tr > td > a").unwrap();
-			if html.select(&pages).count() > 0 {
+			if html.select(&forum_pages).count() > 0 {
 				println!("Ignoring older threads (801st+) in {:?}..", path);
 			}
 		},
 		Thread { url } => {
 			if !ilias.opt.forum {
-				return;
+				return Ok(());
 			}
 			if let Err(e) = fs::create_dir(&path) {
 				if e.kind() != io::ErrorKind::AlreadyExists {
-					println!("error: {:?}", e);
-					return;
+					Err(e)?;
 				}
 			}
 			let url = format!("{}{}", ILIAS_URL, url.url);
 			let data = ilias.download(&url);
-			let html = data.await.unwrap().text().await.unwrap();
+			let html = data.await?.text().await?;
 			let html = Html::parse_document(&html);
-			let post = Selector::parse(".ilFrmPostRow").unwrap();
-			let post_container = Selector::parse(".ilFrmPostContentContainer").unwrap();
-			let post_title = Selector::parse(".ilFrmPostTitle").unwrap();
-			let post_content = Selector::parse(".ilFrmPostContent").unwrap();
-			let span_small = Selector::parse("span.small").unwrap();
-			let a = Selector::parse("a").unwrap();
-			for post in html.select(&post) {
+			for post in html.select(&post_row) {
 				let title = post.select(&post_title).next().unwrap().text().collect::<String>().replace('/', "-");
 				let author = post.select(&span_small).next().unwrap();
 				let author = author.text().collect::<String>();
@@ -643,17 +626,21 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 					if ilias.opt.verbose > 1 {
 						println!("Writing to {:?}..", path);
 					}
-					let file = AsyncFile::create(&path).await.unwrap();
-					let mut file = BufWriter::new(file);
-					tokio::io::copy(&mut data.as_bytes(), &mut file).await.unwrap();
+					let file = AsyncFile::create(&path).await;
+					if file.is_err() {
+						println!("Error creating file {:?}: {:?}", path, file.err().unwrap());
+						return;
+					}
+					let mut file = BufWriter::new(file.unwrap());
+					if let Err(e) = tokio::io::copy(&mut data.as_bytes(), &mut file).await {
+						println!("Error writing to {:?}: {:?}", path, e);
+					}
 					*TASKS_RUNNING.lock() -= 1;
 					*TASKS_QUEUED.lock() -= 1;
 				});
 			}
 			// pagination
-			let table = Selector::parse("table").unwrap();
 			if let Some(pages) = html.select(&table).next() {
-				let links_in_table = Selector::parse("tbody tr td a").unwrap();
 				if let Some(last) = pages.select(&links_in_table).last() {
 					let text = last.text().collect::<String>();
 					if text.trim() == ">>" {
@@ -663,14 +650,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 							url: URL::from_href(last.value().attr("href").unwrap())
 						};
 						task::spawn(async move {
-							*TASKS_QUEUED.lock() += 1;
-							while *TASKS_RUNNING.lock() >= ilias.opt.jobs {
-								tokio::time::delay_for(Duration::from_millis(100)).await;
-							}
-							*TASKS_RUNNING.lock() += 1;
-							process(ilias, path, next_page).await;
-							*TASKS_RUNNING.lock() -= 1;
-							*TASKS_QUEUED.lock() -= 1;
+							process_gracefully(ilias, path, next_page).await;
 						});
 					}
 				} else {
@@ -684,6 +664,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			}
 		}
 	}
+	Ok(())
 }}
 
 #[derive(Debug, StructOpt)]
