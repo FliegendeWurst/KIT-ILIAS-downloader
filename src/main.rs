@@ -307,7 +307,7 @@ impl ILIAS {
 		let client = Client::builder()
 			.cookie_store(true)
 			.user_agent(concat!("KIT-ILIAS-downloader/", env!("CARGO_PKG_VERSION")))
-			.timeout(Duration::from_secs(11))
+			.timeout(Duration::from_secs(20))
 			.build()?;
 		let this = ILIAS {
 			opt, client, user, pass
