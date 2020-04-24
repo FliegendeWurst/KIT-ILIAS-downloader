@@ -440,7 +440,7 @@ impl ILIAS {
 	}
 
 	async fn download(&self, url: &str) -> Result<reqwest::Response> {
-		if self.opt.verbose > 0 {
+		if self.opt.verbose > 1 {
 			println!("Downloading {}", url);
 		}
 		if url.starts_with("http") || url.starts_with("ilias.studium.kit.edu") {
@@ -551,6 +551,9 @@ use crate::selectors::*;
 fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::Future<Output = Result<()>> + Send { async move {
 	let relative_path = path.strip_prefix(&ilias.opt.output).unwrap();
 	if ilias.ignore.matched(relative_path, obj.is_dir()).is_ignore() {
+		if ilias.opt.verbose > 0 {
+			println!("Ignoring {:?}..", relative_path);
+		}
 		return Ok(());
 	}
 	if ilias.opt.verbose > 0 {
