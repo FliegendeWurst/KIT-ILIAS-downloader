@@ -161,7 +161,7 @@ impl Object {
 				};
 			}
 			if url.target.as_ref().map(|x| x.starts_with("frm_")).unwrap_or(false) {
-				// TODO: extract post link? (this codepath should only be hit when parsing the content tree)
+				// TODO: extract post link? (however, this codepath should only be hit when parsing the content tree)
 				let ref_id = url.target.as_ref().unwrap().split('_').nth(1).unwrap();
 				url.ref_id = ref_id.to_owned();
 				return Forum {
@@ -188,7 +188,7 @@ impl Object {
 				let target = url.target.as_ref().unwrap();
 				if !target.ends_with("download") {
 					// download page containing metadata
-					// TODO: perhaps process that? not really needed
+					// TODO: perhaps process that? not really needed since it'll be in a folder anyway
 					return Generic {
 						name,
 						url
@@ -213,6 +213,7 @@ impl Object {
 			return Forum { name, url };
 		}
 
+		// class name is *sometimes* in CamelCase
 		match &*url.baseClass.to_ascii_lowercase() {
 			"ilexercisehandlergui" => ExerciseHandler { name, url },
 			"ililwikihandlergui" => Wiki { name, url },
@@ -378,21 +379,19 @@ impl ILIAS {
 	}
 
 	async fn get_html(&self, url: &str) -> Result<Html> {
-		let text = if url.starts_with("http") || url.starts_with("ilias.studium.kit.edu") {
-			self.client.get(url).send().await?.text().await?
+		let text = self.download(url).await?.text().await?;
+		let html = Html::parse_document(&text);
+		if html.select(&alert_danger).next().is_some() {
+			Err("ILIAS error".into())
 		} else {
-			let url = format!("{}{}", ILIAS_URL, url);
-			self.client.get(&url).send().await?.text().await?
-		};
-		Ok(Html::parse_document(&text))
+			Ok(html)
+		}
 	}
 
 	async fn get_html_fragment(&self, url: &str) -> Result<Html> {
-		let text = self.client.get(url).send().await?.text().await?;
+		let text = self.download(url).await?.text().await?;
 		let html = Html::parse_fragment(&text);
-		// TODO: have this in get_html too
 		if html.select(&alert_danger).next().is_some() {
-			//println!("{}", text);
 			Err("ILIAS error".into())
 		} else {
 			Ok(html)
@@ -406,7 +405,7 @@ impl ILIAS {
 
 	async fn get_course_content_tree(&self, ref_id: &str, cmd_node: &str) -> Result<Vec<Object>> {
 		// TODO: this magically does not return sub-folders
-		// opening the same url in browser does show sub-folders..
+		// opening the same url in browser does show sub-folders?!
 		let url = format!(
 			"{}ilias.php?ref_id={}&cmdClass=ilobjcoursegui&cmd=showRepTree&cmdNode={}&baseClass=ilRepositoryGUI&cmdMode=asynch&exp_cmd=getNodeAsync&node_id=exp_node_rep_exp_{}&exp_cont=il_expl2_jstree_cont_rep_exp&searchterm=",
 			ILIAS_URL, ref_id, cmd_node, ref_id
@@ -442,12 +441,14 @@ impl ILIAS {
 #[tokio::main]
 async fn main() {
 	let opt = Opt::from_args();
+	// need this because error handling is WIP
 	*PANIC_HOOK.lock() = panic::take_hook();
 	panic::set_hook(Box::new(|info| {
 		*TASKS_RUNNING.lock() -= 1;
 		*TASKS_QUEUED.lock() -= 1;
 		PANIC_HOOK.lock()(info);
 	}));
+
 	let user = rprompt::prompt_reply_stdout("Username: ").unwrap();
 	let pass = rpassword::read_password_from_tty(Some("Password: ")).unwrap();
 	let ilias = match ILIAS::login::<_, String>(opt, user, pass).await {
@@ -457,8 +458,11 @@ async fn main() {
 			std::process::exit(77);
 		}
 	};
-	// need this to get the content tree
-	let _ = ilias.client.get("https://ilias.studium.kit.edu/ilias.php?baseClass=ilRepositoryGUI&cmd=frameset&set_mode=tree&ref_id=1").send().await;
+	if ilias.opt.content_tree {
+		// need this to get the content tree
+		// TODO error handling
+		let _ = ilias.client.get("https://ilias.studium.kit.edu/ilias.php?baseClass=ilRepositoryGUI&cmd=frameset&set_mode=tree&ref_id=1").send().await;
+	}
 	let ilias = Arc::new(ilias);
 	let desktop = ilias.personal_desktop().await.unwrap();
 	for item in desktop.items {
@@ -474,8 +478,11 @@ async fn main() {
 	while *TASKS_QUEUED.lock() > 0 {
 		tokio::time::delay_for(Duration::from_millis(500)).await;
 	}
-	// restore fast page loading times
-	let _ = ilias.client.get("https://ilias.studium.kit.edu/ilias.php?baseClass=ilRepositoryGUI&cmd=frameset&set_mode=flat&ref_id=1").send().await;
+	if ilias.opt.content_tree {
+		// restore fast page loading times
+		// TODO error handling
+		let _ = ilias.client.get("https://ilias.studium.kit.edu/ilias.php?baseClass=ilRepositoryGUI&cmd=frameset&set_mode=flat&ref_id=1").send().await;
+	}
 }
 
 lazy_static!{
@@ -539,20 +546,24 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 					Err(e)?;
 				}
 			}
-			let html = ilias.download(&url.url).await?.text().await?;
-			let cmd_node = cmd_node_regex.find(&html).ok_or::<Error>("can't find cmdNode".into())?.as_str()[8..].to_owned();
-			let content_tree = ilias.get_course_content_tree(&url.ref_id, &cmd_node).await;
-			let content = match content_tree {
-				Ok(tree) => tree,
-				Err(e) => {
-					// some folders are hidden on the course page and can only be found via the RSS feed / recent activity / content tree sidebar
-					// TODO: this is probably never the case for folders?
-					if html.contains(r#"input[name="cmd[join]""#) {
-						return Ok(()); // ignore groups we are not in
+			let content = if ilias.opt.content_tree {
+				let html = ilias.download(&url.url).await?.text().await?;
+				let cmd_node = cmd_node_regex.find(&html).ok_or::<Error>("can't find cmdNode".into())?.as_str()[8..].to_owned();
+				let content_tree = ilias.get_course_content_tree(&url.ref_id, &cmd_node).await;
+				match content_tree {
+					Ok(tree) => tree,
+					Err(e) => {
+						// some folders are hidden on the course page and can only be found via the RSS feed / recent activity / content tree sidebar
+						// TODO: this is probably never the case for folders?
+						if html.contains(r#"input[name="cmd[join]""#) {
+							return Ok(()); // ignore groups we are not in
+						}
+						println!("Warning: {:?} falling back to incomplete course content extractor! {}", name, e.display_chain());
+						ilias.get_course_content(&url).await? // TODO: perhaps don't download almost the same content 3x
 					}
-					println!("Warning: {:?} falling back to incomplete course content extractor! {}", name, e.display_chain());
-					ilias.get_course_content(&url).await? // TODO: perhaps don't download almost the same content 3x
 				}
+			} else {
+				ilias.get_course_content(&url).await?
 			};
 			for item in content {
 				let mut path = path.clone();
@@ -825,7 +836,7 @@ struct Opt {
 	/// Do not download files
 	#[structopt(short, long)]
 	skip_files: bool,
-	
+
 	/// Do not download Opencast videos
 	#[structopt(short, long)]
 	no_videos: bool,
@@ -833,11 +844,15 @@ struct Opt {
 	/// Download forum content
 	#[structopt(short = "t", long)]
 	forum: bool,
-	
+
 	/// Re-download already present files
 	#[structopt(short)]
 	force: bool,
-	
+
+	/// Use content tree (slow but thorough)
+	#[structopt(long)]
+	content_tree: bool,
+
 	/// Verbose logging (print objects downloaded)
 	#[structopt(short, multiple = true, parse(from_occurrences))]
 	verbose: usize,
