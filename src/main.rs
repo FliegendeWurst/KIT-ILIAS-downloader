@@ -1,5 +1,6 @@
 use error_chain::ChainedError;
 use futures_util::stream::TryStreamExt;
+use ignore::gitignore::Gitignore;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use regex::Regex;
@@ -27,6 +28,7 @@ const ILIAS_URL: &'static str = "https://ilias.studium.kit.edu/";
 
 struct ILIAS {
 	opt: Opt,
+	ignore: Gitignore,
 	// TODO: use these for re-authentication in case of session timeout/invalidation
 	user: String,
 	pass: String,
@@ -125,6 +127,13 @@ impl Object {
 			PluginDispatch { .. } => "plugin dispatch",
 			Video { .. } => "video",
 			Generic { .. } => "generic",
+		}
+	}
+
+	fn is_dir(&self) -> bool {
+		match self {
+			Course { .. } | Folder { .. } | Forum { .. } | Thread { .. } | Wiki { .. } | ExerciseHandler { .. } | PluginDispatch { .. } => true,
+			File { .. } | Video { .. } | Generic { .. } => false
 		}
 	}
 
@@ -301,7 +310,7 @@ impl URL {
 }
 
 impl ILIAS {
-	async fn login<S1: Into<String>, S2: Into<String>>(opt: Opt, user: S1, pass: S2) -> Result<Self> {
+	async fn login<S1: Into<String>, S2: Into<String>>(mut opt: Opt, user: S1, pass: S2) -> Result<Self> {
 		let user = user.into();
 		let pass = pass.into();
 		let client = Client::builder()
@@ -309,8 +318,12 @@ impl ILIAS {
 			.user_agent(concat!("KIT-ILIAS-downloader/", env!("CARGO_PKG_VERSION")))
 			.timeout(Duration::from_secs(20))
 			.build()?;
+		// load .iliasignore file
+		opt.output.push(".iliasignore");
+		let ignore = Gitignore::new(&opt.output).0; // ignore errors
+		opt.output.pop();
 		let this = ILIAS {
-			opt, client, user, pass
+			opt, client, user, pass, ignore
 		};
 		println!("Logging into ILIAS using KIT account..");
 		let session_establishment = this.client
@@ -536,8 +549,13 @@ use crate::selectors::*;
 // see https://github.com/rust-lang/rust/issues/53690#issuecomment-418911229
 //async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) {
 fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::Future<Output = Result<()>> + Send { async move {
+	let relative_path = path.strip_prefix(&ilias.opt.output).unwrap();
+	// TODO: match more than root directories (causes issues with whitelist patterns)
+	if relative_path.components().count() == 1 && ilias.ignore.matched(relative_path, obj.is_dir()).is_ignore() {
+		return Ok(());
+	}
 	if ilias.opt.verbose > 0 {
-		println!("Syncing {} {}.. {}", obj.kind(), path.strip_prefix(&ilias.opt.output).unwrap().to_string_lossy(), obj.url().url);
+		println!("Syncing {} {}.. {}", obj.kind(), relative_path.to_string_lossy(), obj.url().url);
 	}
 	match &obj {
 		Course { url, name } => {
