@@ -2,7 +2,7 @@
 # It is not intended for manual editing.
 [[package]]
 name = "KIT-ILIAS-downloader"
-version = "0.2.1"
+version = "0.2.3"
 dependencies = [
  "error-chain",
  "futures-util",
