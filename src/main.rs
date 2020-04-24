@@ -550,8 +550,7 @@ use crate::selectors::*;
 //async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) {
 fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::Future<Output = Result<()>> + Send { async move {
 	let relative_path = path.strip_prefix(&ilias.opt.output).unwrap();
-	// TODO: match more than root directories (causes issues with whitelist patterns)
-	if relative_path.components().count() == 1 && ilias.ignore.matched(relative_path, obj.is_dir()).is_ignore() {
+	if ilias.ignore.matched(relative_path, obj.is_dir()).is_ignore() {
 		return Ok(());
 	}
 	if ilias.opt.verbose > 0 {
