@@ -373,13 +373,13 @@ impl ILIAS {
 
 	async fn personal_desktop(&self) -> Result<Dashboard> {
 		let html = self.get_html("https://ilias.studium.kit.edu/ilias.php?baseClass=ilPersonalDesktopGUI&cmd=jumpToSelectedItems").await?;
-		let items = ILIAS::get_items(&html)?;
+		let items = ILIAS::get_items(&html).into_iter().flat_map(Result::ok).collect();
 		Ok(Dashboard {
 			items
 		})
 	}
 
-	fn get_items(html: &Html) -> Result<Vec<Object>> {
+	fn get_items(html: &Html) -> Vec<Result<Object>> {
 		let container_items = Selector::parse("div.il_ContainerListItem").unwrap();
 		let container_item_title = Selector::parse("a.il_ContainerItemTitle").unwrap();
 		html.select(&container_items).map(|item| {
@@ -411,9 +411,9 @@ impl ILIAS {
 		}
 	}
 
-	async fn get_course_content(&self, url: &URL) -> Result<Vec<Object>> {
+	async fn get_course_content(&self, url: &URL) -> Result<Vec<Result<Object>>> {
 		let html = self.get_html(&url.url).await?;
-		Ok(ILIAS::get_items(&html)?)
+		Ok(ILIAS::get_items(&html))
 	}
 
 	async fn get_course_content_tree(&self, ref_id: &str, cmd_node: &str) -> Result<Vec<Object>> {
@@ -579,11 +579,11 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 							return Ok(()); // ignore groups we are not in
 						}
 						println!("Warning: {:?} falling back to incomplete course content extractor! {}", name, e.display_chain());
-						ilias.get_course_content(&url).await? // TODO: perhaps don't download almost the same content 3x
+						ilias.get_course_content(&url).await?.into_iter().flat_map(Result::ok).collect() // TODO: perhaps don't download almost the same content 3x
 					}
 				}
 			} else {
-				ilias.get_course_content(&url).await?
+				ilias.get_course_content(&url).await?.into_iter().flat_map(Result::ok).collect()
 			};
 			for item in content {
 				let mut path = path.clone();
@@ -602,6 +602,13 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			}
 			let content = ilias.get_course_content(&url).await?;
 			for item in content {
+				if item.is_err() {
+					if ilias.opt.verbose > 0 {
+						println!("Ignoring: {}", item.err().unwrap().display_chain());
+					}
+					continue;
+				}
+				let item = item.unwrap();
 				let mut path = path.clone();
 				path.push(item.name());
 				let ilias = Arc::clone(&ilias);
