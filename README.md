@@ -8,7 +8,7 @@ Download content from ILIAS. That includes:
 ## Installation
 
 Go to the [releases](../../releases) and get the executable for your operating system. Alternatively compile from source: (to get the latest updates)
-```sh
+```
 $ git clone https://github.com/FliegendeWurst/KIT-ILIAS-downloader
 ...
 $ cd KIT-ILIAS-downloader
@@ -19,10 +19,9 @@ $ cp target/release/KIT-ILIAS-downloader [directory in $PATH]
 
 ## Usage
 
-Use `-o ILIAS` to set the download directory and `-j 5` to speed up the download. Username and password have to be provided every time the program is run.
-You can put a `.iliasignore` in the output directory to skip some courses/folders/files.
+Use `-o <directory>` to specify the download directory. Username and password have to be provided every time the program is run.
 
-```sh
+```
 $ KIT-ILIAS-downloader --help
 KIT-ILIAS-downloader 0.2.3
 
@@ -44,7 +43,16 @@ OPTIONS:
     -o, --output <output>    Output directory
 ```
 
+### .iliasignore
+
+.gitignore syntax can be used in a `.iliasignore` file: (located in the download folder)
+```ignore
+# example: only download a single course
+/*/
+!/InsertNameHere/
+```
+
 ## Related programs
 
-- https://github.com/brantsch/kit-ilias-fuse (synchronous networking and sometimes (?) truncated downloads)
-- https://github.com/Garmelon/PFERD/ (currently in the middle of a rewrite)
+- https://github.com/brantsch/kit-ilias-fuse
+- https://github.com/Garmelon/PFERD/
