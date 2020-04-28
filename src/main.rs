@@ -319,6 +319,7 @@ impl ILIAS {
 		let client = Client::builder()
 			.cookie_store(true)
 			.user_agent(concat!("KIT-ILIAS-downloader/", env!("CARGO_PKG_VERSION")))
+			// timeout is infinite by default
 			.build()?;
 		// load .iliasignore file
 		opt.output.push(".iliasignore");
