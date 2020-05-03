@@ -643,7 +643,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			let mut reader = stream_reader(data.bytes_stream().map_err(|x| {
 				io::Error::new(io::ErrorKind::Other, x)
 			}));
-			println!("Writing to {:?}..", path);
+			println!("Writing file to {:?}..", path);
 			let file = AsyncFile::create(&path).await?;
 			let mut file = BufWriter::new(file);
 			tokio::io::copy(&mut reader, &mut file).await?;
