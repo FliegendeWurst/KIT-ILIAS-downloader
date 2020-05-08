@@ -315,7 +315,7 @@ impl ILIAS {
 		let pass = pass.into();
 		let client = Client::builder()
 			.cookie_store(true)
-			.user_agent(concat!("KIT-ILIAS-downloader/", env!("CARGO_PKG_VERSION")))
+			.user_agent(concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")))
 			// timeout is infinite by default
 			.build()?;
 		// load .iliasignore file
@@ -877,7 +877,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 }}
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "KIT-ILIAS-downloader")]
+#[structopt(name = env!("CARGO_PKG_NAME"))]
 struct Opt {
 	/// Do not download files
 	#[structopt(short, long)]
