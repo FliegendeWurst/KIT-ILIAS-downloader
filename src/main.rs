@@ -695,12 +695,6 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			if ilias.opt.no_videos {
 				return Ok(());
 			}
-			if !ilias.opt.force && fs::metadata(&path).is_ok() {
-				if ilias.opt.verbose > 1 {
-					println!("Skipping download, file exists already");
-				}
-				return Ok(());
-			}
 			let url = format!("{}{}", ILIAS_URL, url.url);
 			let data = ilias.download(&url);
 			let html = data.await?.text().await?;
@@ -724,6 +718,20 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 				.map(|x| x.as_str())
 				.ok_or(anyhow!("video src not found"))?
 				.ok_or(anyhow!("video src not string"))?;
+			if let Ok(meta) = fs::metadata(&path) {
+				let head = ilias.client.head(url).send().await.context("HEAD request failed")?;
+				if let Some(len) = head.headers().get("content-length") {
+					if meta.len() != len.to_str()?.parse::<u64>()? {
+						println!("Warning: {} was updated, consider moving the outdated file", relative_path.to_string_lossy());
+					}
+				}
+				if ilias.opt.verbose > 1 {
+					println!("Skipping download, file exists already");
+				}
+				if !ilias.opt.force {
+					return Ok(());
+				}
+			}
 			let resp = ilias.download(&url).await?;
 			let mut reader = stream_reader(resp.bytes_stream().map_err(|x| {
 				io::Error::new(io::ErrorKind::Other, x)
