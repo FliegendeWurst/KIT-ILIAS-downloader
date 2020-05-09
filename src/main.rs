@@ -121,6 +121,8 @@ mod selectors {
 		pub static ref forum_pages: Selector = Selector::parse("div.ilTableNav > table > tbody > tr > td > a").unwrap();
 		pub static ref alert_danger: Selector = Selector::parse("div.alert-danger").unwrap();
 		pub static ref tree_highlighted: Selector = Selector::parse("span.ilHighlighted").unwrap();
+		pub static ref form_group: Selector = Selector::parse(".form-group").unwrap();
+		pub static ref form_name: Selector = Selector::parse(".il_InfoScreenProperty").unwrap();
 
 		pub static ref cmd_node_regex: Regex = Regex::new(r#"cmdNode=uf:\w\w"#).unwrap();
 	}
@@ -436,18 +438,24 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl std::futur
 				}
 			}
 			let html = ilias.get_html(&url.url).await?;
-			for link in html.select(&a) {
+			for row in html.select(&form_group) {
+				let link = row.select(&a).next();
+				if link.is_none() {
+					continue;
+				}
+				let link = link.unwrap();
 				let href = link.value().attr("href");
 				if href.is_none() {
 					continue;
 				}
 				let href = href.unwrap();
 				let url = URL::from_href(href);
-				if url.cmd.as_deref().unwrap_or("") != "downloadFile" {
+				let cmd = url.cmd.as_deref().unwrap_or("");
+				if cmd != "downloadFile" && cmd != "downloadGlobalFeedbackFile" {
 					continue;
 				}
-				// link is definitely just a download link to the exercise
-				let name = url.file.clone().context("link without file name")?;
+				// link is definitely just a download link to the exercise or the solution
+				let name = row.select(&form_name).next().context("link without file name")?.text().collect::<String>().trim().to_owned();
 				let item = File { url, name };
 				let mut path = path.clone();
 				path.push(item.name());
