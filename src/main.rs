@@ -93,7 +93,7 @@ fn process_gracefully(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std
 	*TASKS_RUNNING.lock() += 1;
 	let path_text = format!("{:?}", path);
 	if let Err(e) = process(ilias, path, obj).await.context("Failed to process URL") {
-		print!("Syncing {:?}: {:?}", path_text, e);
+		println!("Syncing {}: {:?}", path_text, e);
 	}
 	*TASKS_RUNNING.lock() -= 1;
 	*TASKS_QUEUED.lock() -= 1;
@@ -129,7 +129,7 @@ use crate::selectors::*;
 
 // see https://github.com/rust-lang/rust/issues/53690#issuecomment-418911229
 //async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) {
-fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::Future<Output = Result<()>> + Send { async move {
+fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl std::future::Future<Output = Result<()>> + Send { async move {
 	let log_level = ilias.opt.verbose;
 	macro_rules! log {
 		($lvl:expr, $($arg:expr),*) => {
@@ -145,7 +145,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 		log!(1, "Ignored {}", relative_path.to_string_lossy());
 		return Ok(());
 	}
-	log!(1, "Syncing {} {}..", obj.kind(), relative_path.to_string_lossy());
+	log!(1, "Syncing {} {}", obj.kind(), relative_path.to_string_lossy());
 	log!(2, " URL: {}", obj.url().url);
 	match &obj {
 		Course { url, name } => {
@@ -215,7 +215,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			let mut reader = stream_reader(data.bytes_stream().map_err(|x| {
 				io::Error::new(io::ErrorKind::Other, x)
 			}));
-			log!(0, "Writing {}..", relative_path.to_string_lossy());
+			log!(0, "Writing {}", relative_path.to_string_lossy());
 			let file = AsyncFile::create(&path).await?;
 			let mut file = BufWriter::new(file);
 			tokio::io::copy(&mut reader, &mut file).await?;
@@ -429,8 +429,95 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 				}
 			}
 		},
-		o => {
-			log!(1, "Ignored {:?}", o)
+		ExerciseHandler { url, .. } => {
+			if let Err(e) = fs::create_dir(&path) {
+				if e.kind() != io::ErrorKind::AlreadyExists {
+					Err(e)?;
+				}
+			}
+			let html = ilias.get_html(&url.url).await?;
+			for link in html.select(&a) {
+				let href = link.value().attr("href");
+				if href.is_none() {
+					continue;
+				}
+				let href = href.unwrap();
+				let url = URL::from_href(href);
+				if url.cmd.as_deref().unwrap_or("") != "downloadFile" {
+					continue;
+				}
+				// link is definitely just a download link to the exercise
+				let name = url.file.clone().context("link without file name")?;
+				let item = File { url, name };
+				let mut path = path.clone();
+				path.push(item.name());
+				let ilias = Arc::clone(&ilias);
+				task::spawn(async {
+					process_gracefully(ilias, path, item).await;
+				});
+			}
+		},
+		Weblink { url, .. } => {
+			if !ilias.opt.force && fs::metadata(&path).is_ok() {
+				log!(2, "Skipping download, link exists already");
+				return Ok(());
+			}
+			let head = ilias.client.head(&url.url).send().await.context("HEAD request failed")?;
+			let url = head.url().as_str();
+			if url.starts_with(ILIAS_URL) {
+				// is a link list
+				if let Err(e) = fs::create_dir(&path) {
+					if e.kind() != io::ErrorKind::AlreadyExists {
+						Err(e)?;
+					}
+				} else {
+					log!(0, "Writing {}", relative_path.to_string_lossy());
+				}
+
+				let urls = {
+					let html = ilias.get_html(url).await?;
+					html.select(&a)
+						.filter_map(|x| x.value().attr("href").map(|y| (y, x.text().collect::<String>())))
+						.map(|(x, y)| (URL::from_href(x), y.trim().to_owned()))
+						.collect::<Vec<_>>()
+				};
+
+				for (url, name) in urls {
+					if url.cmd.as_deref().unwrap_or("") != "callLink" {
+						continue;
+					}
+
+					let head = ilias.client.head(url.url.as_str()).send().await.context("HEAD request to web link failed");
+					if head.is_err() {
+						println!("Warning: {:?}", head.err().unwrap());
+						continue;
+					}
+					let head = head.unwrap();
+					let url = head.url().as_str();
+					path.push(name);
+					let file = AsyncFile::create(&path).await?;
+					let mut file = BufWriter::new(file);
+					tokio::io::copy(&mut url.as_bytes(), &mut file).await?;
+					path.pop();
+				}
+			} else {
+				log!(0, "Writing {}", relative_path.to_string_lossy());
+				let file = AsyncFile::create(&path).await?;
+				let mut file = BufWriter::new(file);
+				tokio::io::copy(&mut url.as_bytes(), &mut file).await?;
+			}
+		},
+		Wiki { .. } => {
+			log!(1, "Ignored wiki!");
+		},
+		Survey { .. } => {
+			log!(1, "Ignored survey!");
+		},
+		Presentation { .. } => {
+			log!(1, "Ignored interactive presentation! (visit it yourself, it's probably interesting)");
+		},
+		Generic { .. } => {
+			log!(1, "Ignored generic {:?}", obj)
 		}
 	}
 	Ok(())
@@ -657,6 +744,18 @@ enum Object {
 		name: String,
 		url: URL
 	},
+	Weblink {
+		name: String,
+		url: URL
+	},
+	Survey {
+		name: String,
+		url: URL
+	},
+	Presentation {
+		name: String,
+		url: URL
+	},
 	PluginDispatch {
 		name: String,
 		url: URL
@@ -681,6 +780,9 @@ impl Object {
 			Forum { name, .. } => &name,
 			Thread { url } => &url.thr_pk.as_ref().unwrap(),
 			Wiki { name, .. } => &name,
+			Weblink { name, ..} => &name,
+			Survey { name, .. } => &name,
+			Presentation { name, .. } => &name,
 			ExerciseHandler { name, .. } => &name,
 			PluginDispatch { name, .. } => &name,
 			Video { url } => &url.url,
@@ -696,6 +798,9 @@ impl Object {
 			Forum { url, .. } => &url,
 			Thread { url } => &url,
 			Wiki { url, .. } => &url,
+			Weblink { url, .. } => &url,
+			Survey { url, .. } => &url,
+			Presentation { url, .. } => &url,
 			ExerciseHandler { url, .. } => &url,
 			PluginDispatch { url, .. } => &url,
 			Video { url } => &url,
@@ -711,6 +816,9 @@ impl Object {
 			Forum { .. } => "forum",
 			Thread { .. } => "thread",
 			Wiki { .. } => "wiki",
+			Weblink { .. } => "weblink",
+			Survey { .. } => "survey",
+			Presentation { .. } => "presentation",
 			ExerciseHandler { .. } => "exercise handler",
 			PluginDispatch { .. } => "plugin dispatch",
 			Video { .. } => "video",
@@ -720,8 +828,19 @@ impl Object {
 
 	fn is_dir(&self) -> bool {
 		match self {
-			Course { .. } | Folder { .. } | Forum { .. } | Thread { .. } | Wiki { .. } | ExerciseHandler { .. } | PluginDispatch { .. } => true,
-			File { .. } | Video { .. } | Generic { .. } => false
+			Course { .. } |
+				Folder { .. } |
+				Forum { .. } |
+				Thread { .. } |
+				Wiki { .. } |
+				ExerciseHandler { .. } |
+				Presentation { .. } |
+				PluginDispatch { .. } => true,
+			File { .. } |
+				Video { .. } |
+				Weblink { .. } |
+				Survey { .. } |
+				Generic { .. } => false
 		}
 	}
 
@@ -813,6 +932,9 @@ impl Object {
 		Ok(match &*url.baseClass.to_ascii_lowercase() {
 			"ilexercisehandlergui" => ExerciseHandler { name, url },
 			"ililwikihandlergui" => Wiki { name, url },
+			"illinkresourcehandlergui" => Weblink { name, url },
+			"ilobjsurveygui" => Survey { name, url },
+			"illmpresentationgui" => Presentation { name, url },
 			"ilrepositorygui" => match url.cmd.as_deref() {
 				Some("view") => Folder { name, url },
 				Some(_) => Generic { name, url },
@@ -837,6 +959,7 @@ struct URL {
 	pos_pk: Option<String>,
 	ref_id: String,
 	target: Option<String>,
+	file: Option<String>,
 }
 
 #[allow(non_snake_case)]
@@ -853,12 +976,13 @@ impl URL {
 			pos_pk: None,
 			ref_id: String::new(),
 			target: None,
+			file: None,
 		}
 	}
 
 	fn from_href(href: &str) -> Self {
 		let url = if !href.starts_with(ILIAS_URL) {
-			Url::parse(&format!("http://domain/{}", href)).unwrap()
+			Url::parse(&format!("{}{}", ILIAS_URL, href)).unwrap()
 		} else {
 			Url::parse(href).unwrap()
 		};
@@ -871,6 +995,7 @@ impl URL {
 		let mut pos_pk = None;
 		let mut ref_id = String::new();
 		let mut target = None;
+		let mut file = None;
 		for (k, v) in url.query_pairs() {
 			match &*k {
 				"baseClass" => baseClass = v.into_owned(),
@@ -882,11 +1007,12 @@ impl URL {
 				"pos_pk" => pos_pk = Some(v.into_owned()),
 				"ref_id" => ref_id = v.into_owned(),
 				"target" => target = Some(v.into_owned()),
+				"file" => file = Some(v.into_owned()),
 				_ => {}
 			}
 		}
 		URL {
-			url: href.to_owned(),
+			url: url.into_string(),
 			baseClass,
 			cmdClass,
 			cmdNode,
@@ -896,6 +1022,7 @@ impl URL {
 			pos_pk,
 			ref_id,
 			target,
+			file,
 		}
 	}
 }
