@@ -558,16 +558,23 @@ use crate::selectors::*;
 // see https://github.com/rust-lang/rust/issues/53690#issuecomment-418911229
 //async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) {
 fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::Future<Output = Result<()>> + Send { async move {
+	let log_level = ilias.opt.verbose;
+	macro_rules! log {
+		($lvl:expr, $($arg:expr),*) => {
+			#[allow(unused_comparisons)] // 0 >= 0
+			if log_level >= $lvl {
+				println!($($arg),*);
+			}
+		}
+	}
+
 	let relative_path = path.strip_prefix(&ilias.opt.output).unwrap();
 	if ilias.ignore.matched(relative_path, obj.is_dir()).is_ignore() {
-		if ilias.opt.verbose > 0 {
-			println!("Ignoring {:?}..", relative_path);
-		}
+		log!(1, "Ignored {}", relative_path.to_string_lossy());
 		return Ok(());
 	}
-	if ilias.opt.verbose > 0 {
-		println!("Syncing {} {}.. {}", obj.kind(), relative_path.to_string_lossy(), obj.url().url);
-	}
+	log!(1, "Syncing {} {}..", obj.kind(), relative_path.to_string_lossy());
+	log!(2, " URL: {}", obj.url().url);
 	match &obj {
 		Course { url, name } => {
 			if let Err(e) = fs::create_dir(&path) {
@@ -587,7 +594,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 						if html.contains(r#"input[name="cmd[join]""#) {
 							return Ok(()); // ignore groups we are not in
 						}
-						println!("Warning: {:?} falling back to incomplete course content extractor! {:?}", name, e);
+						log!(0, "Warning: {:?} falling back to incomplete course content extractor! {:?}", name, e);
 						ilias.get_course_content(&url).await?.into_iter().flat_map(Result::ok).collect() // TODO: perhaps don't download almost the same content 3x
 					}
 				}
@@ -612,9 +619,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			let content = ilias.get_course_content(&url).await?;
 			for item in content {
 				if item.is_err() {
-					if ilias.opt.verbose > 0 {
-						println!("Ignoring: {:?}", item.err().unwrap());
-					}
+					log!(1, "Ignoring: {:?}", item.err().unwrap());
 					continue;
 				}
 				let item = item.unwrap();
@@ -631,16 +636,14 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 				return Ok(());
 			}
 			if !ilias.opt.force && fs::metadata(&path).is_ok() {
-				if ilias.opt.verbose > 1 {
-					println!("Skipping download, file exists already");
-				}
+				log!(2, "Skipping download, file exists already");
 				return Ok(());
 			}
 			let data = ilias.download(&url.url).await?;
 			let mut reader = stream_reader(data.bytes_stream().map_err(|x| {
 				io::Error::new(io::ErrorKind::Other, x)
 			}));
-			println!("Writing file to {:?}..", path);
+			log!(0, "Writing {}..", relative_path.to_string_lossy());
 			let file = AsyncFile::create(&path).await?;
 			let mut file = BufWriter::new(file);
 			tokio::io::copy(&mut reader, &mut file).await?;
@@ -661,7 +664,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			for row in html.select(&video_tr) {
 				let link = row.select(&a_target_blank).next();
 				if link.is_none() {
-					println!("Warning: table row without link in {}", url.url);
+					log!(0, "Warning: table row without link in {}", url.url);
 					continue;
 				}
 				let link = link.unwrap();
@@ -674,9 +677,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 					}
 					let mut path = path.clone();
 					path.push(format!("{}.mp4", title));
-					if ilias.opt.verbose > 0 {
-						println!("Found video: {}", title);
-					}
+					log!(1, "Found video: {}", title);
 					let video = Video {
 						url: URL::raw(link.value().attr("href").ok_or(anyhow!("video link without href"))?.to_owned())
 					};
@@ -698,21 +699,15 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			let url = format!("{}{}", ILIAS_URL, url.url);
 			let data = ilias.download(&url);
 			let html = data.await?.text().await?;
-			if ilias.opt.verbose > 1 {
-				println!("{}", html);
-			}
+			log!(2, "{}", html);
 			let json: serde_json::Value = {
 				let mut json_capture = XOCT_REGEX.captures_iter(&html);
 				let json = &json_capture.next().context("xoct player json not found")?[1];
-				if ilias.opt.verbose > 1 {
-					println!("{}", json);
-				}
+				log!(2, "{}", json);
 				let json = json.split(",\n").nth(0).context("invalid xoct player json")?;
 				serde_json::from_str(&json.trim())?
 			};
-			if ilias.opt.verbose > 1 {
-				println!("{}", json);
-			}
+			log!(2, "{}", json);
 			let url = json
 				.pointer("/streams/0/sources/mp4/0/src")
 				.map(|x| x.as_str())
@@ -722,12 +717,10 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 				let head = ilias.client.head(url).send().await.context("HEAD request failed")?;
 				if let Some(len) = head.headers().get("content-length") {
 					if meta.len() != len.to_str()?.parse::<u64>()? {
-						println!("Warning: {} was updated, consider moving the outdated file", relative_path.to_string_lossy());
+						log!(0, "Warning: {} was updated, consider moving the outdated file", relative_path.to_string_lossy());
 					}
 				}
-				if ilias.opt.verbose > 1 {
-					println!("Skipping download, file exists already");
-				}
+				log!(2, "Skipping download, file exists already");
 				if !ilias.opt.force {
 					return Ok(());
 				}
@@ -736,7 +729,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			let mut reader = stream_reader(resp.bytes_stream().map_err(|x| {
 				io::Error::new(io::ErrorKind::Other, x)
 			}));
-			println!("Saving video to {:?}", path);
+			log!(0, "Writing {}", relative_path.to_string_lossy());
 			let file = AsyncFile::create(&path).await?;
 			let mut file = BufWriter::new(file);
 			tokio::io::copy(&mut reader, &mut file).await?;
@@ -771,7 +764,7 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 			for row in html.select(&tr) {
 				let cells = row.select(&td).collect::<Vec<_>>();
 				if cells.len() != 6 {
-					println!("Warning: unusual table row ({} cells) in {}", cells.len(), url);
+					log!(0, "Warning: unusual table row ({} cells) in {}", cells.len(), url);
 					continue;
 				}
 				let link = cells[1].select(&a).next().context("thread link not found")?;
@@ -793,14 +786,14 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 				if available_posts <= saved_posts && !ilias.opt.force {
 					continue;
 				}
-				println!("New posts in {:?}..", path);
+				log!(0, "New posts in {:?}..", path);
 				let ilias = Arc::clone(&ilias);
 				task::spawn(async {
 					process_gracefully(ilias, path, object).await;
 				});
 			}
 			if html.select(&forum_pages).count() > 0 {
-				println!("Ignoring older threads in {:?}..", path);
+				log!(0, "Ignoring older threads in {:?}..", path);
 			}
 		},
 		Thread { url } => {
@@ -832,17 +825,15 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 						tokio::time::delay_for(Duration::from_millis(100)).await;
 					}
 					*TASKS_RUNNING.lock() += 1;
-					if ilias.opt.verbose > 1 {
-						println!("Writing to {:?}..", path);
-					}
+					log!(2, "Writing to {:?}..", path);
 					let file = AsyncFile::create(&path).await;
 					if file.is_err() {
-						println!("Error creating file {:?}: {}", path, file.err().unwrap());
+						log!(0, "Error creating file {:?}: {}", path, file.err().unwrap());
 						return;
 					}
 					let mut file = BufWriter::new(file.unwrap());
 					if let Err(e) = tokio::io::copy(&mut data.as_bytes(), &mut file).await {
-						println!("Error writing to {:?}: {}", path, e);
+						log!(0, "Error writing to {:?}: {}", path, e);
 					}
 					*TASKS_RUNNING.lock() -= 1;
 					*TASKS_QUEUED.lock() -= 1;
@@ -863,14 +854,12 @@ fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl std::future::F
 						});
 					}
 				} else {
-					println!("Warning: unable to find pagination links in {}", url.url);
+					log!(0, "Warning: unable to find pagination links in {}", url.url);
 				}
 			}
 		},
 		o => {
-			if ilias.opt.verbose > 0 {
-				println!("ignoring {:?}", o)
-			}
+			log!(1, "Ignored {:?}", o)
 		}
 	}
 	Ok(())
