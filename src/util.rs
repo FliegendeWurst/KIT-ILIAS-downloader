@@ -18,7 +18,7 @@ where R: AsyncRead + Unpin {
 pub async fn create_dir(path: &Path) -> Result<()> {
 	if let Err(e) = tokio::fs::create_dir(&path).await {
 		if e.kind() != tokio::io::ErrorKind::AlreadyExists {
-			Err(e)?;
+			return Err(e.into());
 		}
 	}
 	Ok(())

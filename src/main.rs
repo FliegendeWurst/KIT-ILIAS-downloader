@@ -24,7 +24,7 @@ use std::time::Duration;
 mod util;
 use util::*;
 
-const ILIAS_URL: &'static str = "https://ilias.studium.kit.edu/";
+const ILIAS_URL: &str = "https://ilias.studium.kit.edu/";
 
 #[tokio::main]
 async fn main() {
@@ -61,9 +61,7 @@ async fn main() {
 				let mut path = ilias.opt.output.clone();
 				path.push(item.name());
 				let ilias = Arc::clone(&ilias);
-				task::spawn(async {
-					process_gracefully(ilias, path, item).await;
-				});
+				task::spawn(process_gracefully(ilias, path, item));
 			}
 		},
 		Err(e) => println!("{:?}", e)
@@ -184,9 +182,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				let mut path = path.clone();
 				path.push(item.name());
 				let ilias = Arc::clone(&ilias);
-				task::spawn(async {
-					process_gracefully(ilias, path, item).await;
-				});
+				task::spawn(process_gracefully(ilias, path, item));
 			}
 		},
 		Folder { url, .. } => {
@@ -201,9 +197,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				let mut path = path.clone();
 				path.push(item.name());
 				let ilias = Arc::clone(&ilias);
-				task::spawn(async {
-					process_gracefully(ilias, path, item).await;
-				});
+				task::spawn(process_gracefully(ilias, path, item));
 			}
 		},
 		File { url, .. } => {
@@ -227,8 +221,8 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			}
 			create_dir(&path).await?;
 			let list_url = format!("{}ilias.php?ref_id={}&cmdClass=xocteventgui&cmdNode=n7:mz:14p&baseClass=ilObjPluginDispatchGUI&lang=de&limit=20&cmd=asyncGetTableGUI&cmdMode=asynch", ILIAS_URL, url.ref_id);
-			let data = ilias.download(&list_url);
-			let html = data.await?.text().await?;
+			let data = ilias.download(&list_url).await?;
+			let html = data.text().await?;
 			let html = Html::parse_fragment(&html);
 			for row in html.select(&video_tr) {
 				let link = row.select(&a_target_blank).next();
@@ -272,7 +266,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				let mut json_capture = XOCT_REGEX.captures_iter(&html);
 				let json = &json_capture.next().context("xoct player json not found")?[1];
 				log!(2, "{}", json);
-				let json = json.split(",\n").nth(0).context("invalid xoct player json")?;
+				let json = json.split(",\n").next().context("invalid xoct player json")?;
 				serde_json::from_str(&json.trim())?
 			};
 			log!(2, "{}", json);
@@ -315,8 +309,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 					html
 						.select(&a)
 						.flat_map(|x| x.value().attr("href"))
-						.filter(|x| x.contains("trows=800"))
-						.next()
+						.find(|x| x.contains("trows=800"))
 						.context("can't find forum thread count selector (empty forum?)")?.to_owned()
 				};
 				let data = ilias.download(&url);
@@ -350,9 +343,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				}
 				log!(0, "New posts in {:?}..", path);
 				let ilias = Arc::clone(&ilias);
-				task::spawn(async {
-					process_gracefully(ilias, path, object).await;
-				});
+				task::spawn(process_gracefully(ilias, path, object));
 			}
 			if html.select(&forum_pages).count() > 0 {
 				log!(0, "Ignoring older threads in {:?}..", path);
@@ -376,12 +367,10 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				let data = data.inner_html();
 				let mut path = path.clone();
 				path.push(name);
-				task::spawn(async move {
-					handle_gracefully(async move {
-						write_file_data(&path, &mut data.as_bytes()).await
-							.context("failed to write forum post")
-					}).await;
-				});
+				task::spawn(handle_gracefully(async move {
+					write_file_data(&path, &mut data.as_bytes()).await
+						.context("failed to write forum post")
+				}));
 			}
 			// pagination
 			if let Some(pages) = html.select(&table).next() {
@@ -393,9 +382,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 						let next_page = Thread {
 							url: URL::from_href(last.value().attr("href").ok_or(anyhow!("page link not found"))?)?
 						};
-						task::spawn(async move {
-							process_gracefully(ilias, path, next_page).await;
-						});
+						task::spawn(process_gracefully(ilias, path, next_page));
 					}
 				} else {
 					log!(0, "Warning: unable to find pagination links in {}", url.url);
@@ -427,9 +414,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				let mut path = path.clone();
 				path.push(item.name());
 				let ilias = Arc::clone(&ilias);
-				task::spawn(async {
-					process_gracefully(ilias, path, item).await;
-				});
+				task::spawn(process_gracefully(ilias, path, item));
 			}
 		},
 		Weblink { url, .. } => {
@@ -441,7 +426,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			let url = head.url().as_str();
 			if url.starts_with(ILIAS_URL) {
 				// is a link list
-				if !fs::metadata(&path).await.is_ok() {
+				if fs::metadata(&path).await.is_err() {
 					create_dir(&path).await?;
 					log!(0, "Writing {}", relative_path.to_string_lossy());
 				}
@@ -892,7 +877,7 @@ impl Object {
 			return Ok(Generic { name, url });
 		}
 
-		if url.cmd.as_ref().map(|x| &**x) == Some("showThreads") {
+		if url.cmd.as_deref() == Some("showThreads") {
 			return Ok(Forum { name, url });
 		}
 
