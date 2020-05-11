@@ -21,9 +21,11 @@ $ cp target/release/KIT-ILIAS-downloader [directory in $PATH]
 
 Use `-o <directory>` to specify the download directory. Username and password have to be provided every time the program is run.
 
+Only content on your [personal desktop](https://ilias.studium.kit.edu/ilias.php?baseClass=ilPersonalDesktopGUI&cmd=jumpToSelectedItems) will be downloaded.
+
 ```
 $ KIT-ILIAS-downloader --help
-KIT-ILIAS-downloader 0.2.3
+KIT-ILIAS-downloader 0.2.5
 
 USAGE:
     KIT-ILIAS-downloader [FLAGS] [OPTIONS] --output <output>
@@ -52,7 +54,7 @@ OPTIONS:
 !/InsertNameHere/
 ```
 
-## Related programs
+## Similar programs
 
-- https://github.com/brantsch/kit-ilias-fuse
+- https://github.com/brantsch/kit-ilias-fuse/
 - https://github.com/Garmelon/PFERD/
