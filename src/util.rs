@@ -13,3 +13,13 @@ where R: AsyncRead + Unpin {
 	tokio::io::copy(data, &mut file).await.context("failed to write to file")?;
 	Ok(())
 }
+
+/// Create a directory. Does not error if the directory already exists.
+pub async fn create_dir(path: &Path) -> Result<()> {
+	if let Err(e) = tokio::fs::create_dir(&path).await {
+		if e.kind() != tokio::io::ErrorKind::AlreadyExists {
+			Err(e)?;
+		}
+	}
+	Ok(())
+}

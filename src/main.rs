@@ -8,12 +8,12 @@ use reqwest::Client;
 use scraper::{ElementRef, Html, Selector};
 use serde_json::json;
 use structopt::StructOpt;
+use tokio::fs;
 use tokio::io::stream_reader;
 use tokio::task;
 use url::Url;
 
 use std::default::Default;
-use std::fs;
 use std::future::Future;
 use std::io;
 use std::panic;
@@ -160,11 +160,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 	log!(2, " URL: {}", obj.url().url);
 	match &obj {
 		Course { url, name } => {
-			if let Err(e) = fs::create_dir(&path) {
-				if e.kind() != io::ErrorKind::AlreadyExists {
-					Err(e)?;
-				}
-			}
+			create_dir(&path).await?;
 			let content = if ilias.opt.content_tree {
 				let html = ilias.download(&url.url).await?.text().await?;
 				let cmd_node = cmd_node_regex.find(&html).context("can't find cmdNode")?.as_str()[8..].to_owned();
@@ -194,11 +190,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			}
 		},
 		Folder { url, .. } => {
-			if let Err(e) = fs::create_dir(&path) {
-				if e.kind() != io::ErrorKind::AlreadyExists {
-					Err(e)?;
-				}
-			}
+			create_dir(&path).await?;
 			let content = ilias.get_course_content(&url).await?;
 			for item in content {
 				if item.is_err() {
@@ -218,7 +210,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			if ilias.opt.skip_files {
 				return Ok(());
 			}
-			if !ilias.opt.force && fs::metadata(&path).is_ok() {
+			if !ilias.opt.force && fs::metadata(&path).await.is_ok() {
 				log!(2, "Skipping download, file exists already");
 				return Ok(());
 			}
@@ -233,11 +225,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			if ilias.opt.no_videos {
 				return Ok(());
 			}
-			if let Err(e) = fs::create_dir(&path) {
-				if e.kind() != io::ErrorKind::AlreadyExists {
-					Err(e)?;
-				}
-			}
+			create_dir(&path).await?;
 			let list_url = format!("{}ilias.php?ref_id={}&cmdClass=xocteventgui&cmdNode=n7:mz:14p&baseClass=ilObjPluginDispatchGUI&lang=de&limit=20&cmd=asyncGetTableGUI&cmdMode=asynch", ILIAS_URL, url.ref_id);
 			let data = ilias.download(&list_url);
 			let html = data.await?.text().await?;
@@ -293,7 +281,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				.map(|x| x.as_str())
 				.ok_or(anyhow!("video src not found"))?
 				.ok_or(anyhow!("video src not string"))?;
-			if let Ok(meta) = fs::metadata(&path) {
+			if let Ok(meta) = fs::metadata(&path).await {
 				let head = ilias.client.head(url).send().await.context("HEAD request failed")?;
 				if let Some(len) = head.headers().get("content-length") {
 					if meta.len() != len.to_str()?.parse::<u64>()? {
@@ -316,11 +304,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			if !ilias.opt.forum {
 				return Ok(());
 			}
-			if let Err(e) = fs::create_dir(&path) {
-				if e.kind() != io::ErrorKind::AlreadyExists {
-					Err(e)?;
-				}
-			}
+			create_dir(&path).await?;
 			let url = format!("{}ilias.php?ref_id={}&cmd=showThreads&cmdClass=ilrepositorygui&cmdNode=uf&baseClass=ilrepositorygui", ILIAS_URL, url.ref_id);
 			let html = {
 				let data = ilias.download(&url);
@@ -355,7 +339,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				path.push(name);
 				// TODO: set modification date?
 				let saved_posts = {
-					match fs::read_dir(&path) {
+					match std::fs::read_dir(&path) { // TODO: make this async
 						Ok(stream) => stream.count(),
 						Err(_) => 0
 					}
@@ -378,11 +362,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			if !ilias.opt.forum {
 				return Ok(());
 			}
-			if let Err(e) = fs::create_dir(&path) {
-				if e.kind() != io::ErrorKind::AlreadyExists {
-					Err(e)?;
-				}
-			}
+			create_dir(&path).await?;
 			let html = ilias.get_html(&url.url).await?;
 			for post in html.select(&post_row) {
 				let title = post.select(&post_title).next().ok_or(anyhow!("post title not found"))?.text().collect::<String>().replace('/', "-");
@@ -423,11 +403,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			}
 		},
 		ExerciseHandler { url, .. } => {
-			if let Err(e) = fs::create_dir(&path) {
-				if e.kind() != io::ErrorKind::AlreadyExists {
-					Err(e)?;
-				}
-			}
+			create_dir(&path).await?;
 			let html = ilias.get_html(&url.url).await?;
 			for row in html.select(&form_group) {
 				let link = row.select(&a).next();
@@ -457,7 +433,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			}
 		},
 		Weblink { url, .. } => {
-			if !ilias.opt.force && fs::metadata(&path).is_ok() {
+			if !ilias.opt.force && fs::metadata(&path).await.is_ok() {
 				log!(2, "Skipping download, link exists already");
 				return Ok(());
 			}
@@ -465,11 +441,8 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			let url = head.url().as_str();
 			if url.starts_with(ILIAS_URL) {
 				// is a link list
-				if let Err(e) = fs::create_dir(&path) {
-					if e.kind() != io::ErrorKind::AlreadyExists {
-						Err(e)?;
-					}
-				} else {
+				if !fs::metadata(&path).await.is_ok() {
+					create_dir(&path).await?;
 					log!(0, "Writing {}", relative_path.to_string_lossy());
 				}
 
