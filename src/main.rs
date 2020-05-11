@@ -451,7 +451,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl std::futur
 				let href = href.unwrap();
 				let url = URL::from_href(href);
 				let cmd = url.cmd.as_deref().unwrap_or("");
-				if cmd != "downloadFile" && cmd != "downloadGlobalFeedbackFile" {
+				if cmd != "downloadFile" && cmd != "downloadGlobalFeedbackFile" && cmd != "downloadFeedbackFile" {
 					continue;
 				}
 				// link is definitely just a download link to the exercise or the solution
