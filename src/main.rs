@@ -420,7 +420,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl std::futur
 						// not last page yet
 						let ilias = Arc::clone(&ilias);
 						let next_page = Thread {
-							url: URL::from_href(last.value().attr("href").ok_or(anyhow!("page link not found"))?)
+							url: URL::from_href(last.value().attr("href").ok_or(anyhow!("page link not found"))?)?
 						};
 						task::spawn(async move {
 							process_gracefully(ilias, path, next_page).await;
@@ -449,7 +449,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl std::futur
 					continue;
 				}
 				let href = href.unwrap();
-				let url = URL::from_href(href);
+				let url = URL::from_href(href)?;
 				let cmd = url.cmd.as_deref().unwrap_or("");
 				if cmd != "downloadFile" && cmd != "downloadGlobalFeedbackFile" && cmd != "downloadFeedbackFile" {
 					continue;
@@ -486,9 +486,9 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl std::futur
 					let html = ilias.get_html(url).await?;
 					html.select(&a)
 						.filter_map(|x| x.value().attr("href").map(|y| (y, x.text().collect::<String>())))
-						.map(|(x, y)| (URL::from_href(x), y.trim().to_owned()))
-						.collect::<Vec<_>>()
-				};
+						.map(|(x, y)| URL::from_href(x).map(|z| (z, y.trim().to_owned())).context("parsing weblink"))
+						.collect::<Result<Vec<_>>>()
+				}?;
 
 				for (url, name) in urls {
 					if url.cmd.as_deref().unwrap_or("") != "callLink" {
@@ -854,7 +854,7 @@ impl Object {
 
 	fn from_link(item: ElementRef, link: ElementRef) -> Result<Self> {
 		let mut name = link.text().collect::<String>().replace('/', "-").trim().to_owned();
-		let mut url = URL::from_href(link.value().attr("href").context("link missing href")?);
+		let mut url = URL::from_href(link.value().attr("href").context("link missing href")?)?;
 
 		if url.thr_pk.is_some() {
 			return Ok(Thread {
@@ -988,11 +988,11 @@ impl URL {
 		}
 	}
 
-	fn from_href(href: &str) -> Self {
+	fn from_href(href: &str) -> Result<Self> {
 		let url = if !href.starts_with(ILIAS_URL) {
-			Url::parse(&format!("{}{}", ILIAS_URL, href)).unwrap()
+			Url::parse(&format!("{}{}", ILIAS_URL, href))?
 		} else {
-			Url::parse(href).unwrap()
+			Url::parse(href)?
 		};
 		let mut baseClass = String::new();
 		let mut cmdClass = None;
@@ -1019,7 +1019,7 @@ impl URL {
 				_ => {}
 			}
 		}
-		URL {
+		Ok(URL {
 			url: url.into_string(),
 			baseClass,
 			cmdClass,
@@ -1031,6 +1031,6 @@ impl URL {
 			ref_id,
 			target,
 			file,
-		}
+		})
 	}
 }
