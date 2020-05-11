@@ -49,9 +49,12 @@ OPTIONS:
 
 .gitignore syntax can be used in a `.iliasignore` file: (located in the download folder)
 ```ignore
-# example: only download a single course
+# example 1: only download a single course
 /*/
-!/InsertNameHere/
+!/InsertCourseHere/
+# example 2: only download files related to one tutorial
+/Course/Tutorien/*/
+!/Course/Tutorien/Tut* 3/
 ```
 
 ## Similar programs
