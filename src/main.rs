@@ -727,37 +727,37 @@ use Object::*;
 impl Object {
 	fn name(&self) -> &str {
 		match self {
-			Course { name, .. } => &name,
-			Folder { name, .. } => &name,
-			File { name, .. } => &name,
-			Forum { name, .. } => &name,
+			Course { name, .. } |
+				Folder { name, .. } |
+				File { name, .. } |
+				Forum { name, .. } |
+				Wiki { name, .. } |
+				Weblink { name, ..} |
+				Survey { name, .. } |
+				Presentation { name, .. } |
+				ExerciseHandler { name, .. } |
+				PluginDispatch { name, .. } |
+				Generic { name, .. } => &name,
 			Thread { url } => &url.thr_pk.as_ref().unwrap(),
-			Wiki { name, .. } => &name,
-			Weblink { name, ..} => &name,
-			Survey { name, .. } => &name,
-			Presentation { name, .. } => &name,
-			ExerciseHandler { name, .. } => &name,
-			PluginDispatch { name, .. } => &name,
 			Video { url } => &url.url,
-			Generic { name, .. } => &name,
 		}
 	}
 
 	fn url(&self) -> &URL {
 		match self {
-			Course { url, .. } => &url,
-			Folder { url, .. } => &url,
-			File { url, .. } => &url,
-			Forum { url, .. } => &url,
-			Thread { url } => &url,
-			Wiki { url, .. } => &url,
-			Weblink { url, .. } => &url,
-			Survey { url, .. } => &url,
-			Presentation { url, .. } => &url,
-			ExerciseHandler { url, .. } => &url,
-			PluginDispatch { url, .. } => &url,
-			Video { url } => &url,
-			Generic { url, .. } => &url,
+			Course { url, .. } |
+				Folder { url, .. } |
+				File { url, .. } |
+				Forum { url, .. } |
+				Thread { url } |
+				Wiki { url, .. } |
+				Weblink { url, .. } |
+				Survey { url, .. } |
+				Presentation { url, .. } |
+				ExerciseHandler { url, .. } |
+				PluginDispatch { url, .. } |
+				Video { url } |
+				Generic { url, .. } => &url,
 		}
 	}
 
@@ -808,20 +808,21 @@ impl Object {
 		}
 
 		if url.url.starts_with("https://ilias.studium.kit.edu/goto.php") {
-			if url.target.as_ref().map(|x| x.starts_with("wiki_")).unwrap_or(false) {
+			let target = url.target.as_deref().unwrap_or("NONE");
+			if target.starts_with("wiki_") {
 				return Ok(Wiki {
 					name,
 					url // TODO: insert ref_id here
 				});
 			}
-			if url.target.as_ref().map(|x| x.starts_with("root_")).unwrap_or(false) {
+			if target.starts_with("root_") {
 				// magazine link
 				return Ok(Generic {
 					name,
 					url
 				});
 			}
-			if url.target.as_ref().map(|x| x.starts_with("crs_")).unwrap_or(false) {
+			if target.starts_with("crs_") {
 				let ref_id = url.target.as_ref().unwrap().split('_').nth(1).unwrap();
 				url.ref_id = ref_id.to_owned();
 				return Ok(Course {
@@ -829,7 +830,7 @@ impl Object {
 					url
 				});
 			}
-			if url.target.as_ref().map(|x| x.starts_with("frm_")).unwrap_or(false) {
+			if target.starts_with("frm_") {
 				// TODO: extract post link? (this codepath should only be hit when parsing the content tree)
 				let ref_id = url.target.as_ref().unwrap().split('_').nth(1).unwrap();
 				url.ref_id = ref_id.to_owned();
@@ -838,14 +839,14 @@ impl Object {
 					url
 				});
 			}
-			if url.target.as_ref().map(|x| x.starts_with("lm_")).unwrap_or(false) {
+			if target.starts_with("lm_") {
 				// fancy interactive task
-				return Ok(Generic {
+				return Ok(Presentation {
 					name,
 					url
 				});
 			}
-			if url.target.as_ref().map(|x| x.starts_with("fold_")).unwrap_or(false) {
+			if target.starts_with("fold_") {
 				let ref_id = url.target.as_ref().unwrap().split('_').nth(1).unwrap();
 				url.ref_id = ref_id.to_owned();
 				return Ok(Folder {
@@ -853,8 +854,7 @@ impl Object {
 					url
 				});
 			}
-			if url.target.as_ref().map(|x| x.starts_with("file_")).unwrap_or(false) {
-				let target = url.target.as_ref().ok_or(anyhow!("no download target"))?;
+			if target.starts_with("file_") {
 				if !target.ends_with("download") {
 					// download page containing metadata
 					return Ok(Generic {
