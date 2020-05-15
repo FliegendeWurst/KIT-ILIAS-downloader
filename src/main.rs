@@ -233,7 +233,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				let link = link.unwrap();
 				let mut cells = row.select(&td);
 				if let Some(title) = cells.nth(2) {
-					let title = title.inner_html();
+					let title = title.text().collect::<String>();
 					let title = title.trim();
 					if title.starts_with("<div") {
 						continue;
