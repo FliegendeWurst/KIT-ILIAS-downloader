@@ -29,6 +29,7 @@ const ILIAS_URL: &str = "https://ilias.studium.kit.edu/";
 #[tokio::main]
 async fn main() {
 	let opt = Opt::from_args();
+	create_dir(&opt.output).await.expect("failed to create output directory");
 	// need this because task scheduling is WIP
 	// (would wait forever on paniced task)
 	*PANIC_HOOK.lock() = panic::take_hook();
