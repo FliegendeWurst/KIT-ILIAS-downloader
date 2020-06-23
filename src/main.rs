@@ -277,10 +277,12 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				.ok_or(anyhow!("video src not found"))?
 				.ok_or(anyhow!("video src not string"))?;
 			if let Ok(meta) = fs::metadata(&path).await {
-				let head = ilias.client.head(url).send().await.context("HEAD request failed")?;
-				if let Some(len) = head.headers().get("content-length") {
-					if meta.len() != len.to_str()?.parse::<u64>()? {
-						log!(0, "Warning: {} was updated, consider moving the outdated file", relative_path.to_string_lossy());
+				if ilias.opt.check_videos {
+					let head = ilias.client.head(url).send().await.context("HEAD request failed")?;
+					if let Some(len) = head.headers().get("content-length") {
+						if meta.len() != len.to_str()?.parse::<u64>()? {
+							log!(0, "Warning: {} was updated, consider moving the outdated file", relative_path.to_string_lossy());
+						}
 					}
 				}
 				log!(2, "Skipping download, file exists already");
@@ -499,6 +501,10 @@ struct Opt {
 	/// Use content tree (slow but thorough)
 	#[structopt(long)]
 	content_tree: bool,
+
+	/// Re-check OpenCast lectures (slow)
+	#[structopt(long)]
+	check_videos: bool,
 
 	/// Verbose logging (print objects downloaded)
 	#[structopt(short, multiple = true, parse(from_occurrences))]
