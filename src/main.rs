@@ -221,7 +221,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				return Ok(());
 			}
 			create_dir(&path).await?;
-			let list_url = format!("{}ilias.php?ref_id={}&cmdClass=xocteventgui&cmdNode=n7:mz:14p&baseClass=ilObjPluginDispatchGUI&lang=de&limit=20&cmd=asyncGetTableGUI&cmdMode=asynch", ILIAS_URL, url.ref_id);
+			let list_url = format!("{}ilias.php?ref_id={}&cmdClass=xocteventgui&cmdNode=n7:mz:14p&baseClass=ilObjPluginDispatchGUI&lang=de&limit=800&cmd=asyncGetTableGUI&cmdMode=asynch", ILIAS_URL, url.ref_id);
 			let data = ilias.download(&list_url).await?;
 			let html = data.text().await?;
 			let html = Html::parse_fragment(&html);
