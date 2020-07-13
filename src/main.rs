@@ -89,10 +89,16 @@ lazy_static!{
 
 fn process_gracefully(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl Future<Output = ()> + Send { async move {
 	*TASKS_QUEUED.lock() += 1;
-	while *TASKS_RUNNING.lock() >= ilias.opt.jobs {
-		tokio::time::delay_for(Duration::from_millis(100)).await;
+	loop {
+		{ // limit scope of lock
+			let mut running = TASKS_RUNNING.lock();
+			if *running < ilias.opt.jobs {
+				*running += 1;
+				break;
+			}
+		}
+		tokio::time::delay_for(Duration::from_millis(50)).await;
 	}
-	*TASKS_RUNNING.lock() += 1;
 	let path_text = path.to_string_lossy().into_owned();
 	if let Err(e) = process(ilias, path, obj).await.context("failed to process URL") {
 		println!("Syncing {}: {:?}", path_text, e);
