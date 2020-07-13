@@ -259,6 +259,10 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			if ilias.opt.no_videos {
 				return Ok(());
 			}
+			if fs::metadata(&path).await.is_ok() && !(ilias.opt.force || ilias.opt.check_videos) {
+				log!(2, "Skipping download, file exists already");
+				return Ok(());
+			}
 			let url = format!("{}{}", ILIAS_URL, url.url);
 			let data = ilias.download(&url);
 			let html = data.await?.text().await?;
@@ -276,26 +280,25 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				.map(|x| x.as_str())
 				.ok_or(anyhow!("video src not found"))?
 				.ok_or(anyhow!("video src not string"))?;
-			if let Ok(meta) = fs::metadata(&path).await {
-				if ilias.opt.check_videos {
-					let head = ilias.client.head(url).send().await.context("HEAD request failed")?;
-					if let Some(len) = head.headers().get("content-length") {
-						if meta.len() != len.to_str()?.parse::<u64>()? {
-							log!(0, "Warning: {} was updated, consider moving the outdated file", relative_path.to_string_lossy());
+			if !ilias.opt.force {
+				if let Ok(meta) = fs::metadata(&path).await {
+					if ilias.opt.check_videos {
+						let head = ilias.client.head(url).send().await.context("HEAD request failed")?;
+						if let Some(len) = head.headers().get("content-length") {
+							if meta.len() != len.to_str()?.parse::<u64>()? {
+								log!(0, "Warning: {} was updated, consider moving the outdated file", relative_path.to_string_lossy());
+							}
 						}
 					}
 				}
-				log!(2, "Skipping download, file exists already");
-				if !ilias.opt.force {
-					return Ok(());
-				}
+			} else {
+				let resp = ilias.download(&url).await?;
+				let mut reader = stream_reader(resp.bytes_stream().map_err(|x| {
+					io::Error::new(io::ErrorKind::Other, x)
+				}));
+				log!(0, "Writing {}", relative_path.to_string_lossy());
+				write_file_data(&path, &mut reader).await.context("failed to save video")?;
 			}
-			let resp = ilias.download(&url).await?;
-			let mut reader = stream_reader(resp.bytes_stream().map_err(|x| {
-				io::Error::new(io::ErrorKind::Other, x)
-			}));
-			log!(0, "Writing {}", relative_path.to_string_lossy());
-			write_file_data(&path, &mut reader).await.context("failed to save video")?;
 		},
 		Forum { url, .. } => {
 			if !ilias.opt.forum {
