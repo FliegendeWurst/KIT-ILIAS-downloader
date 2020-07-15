@@ -1,6 +1,6 @@
 [package]
 name = "KIT-ILIAS-downloader"
-version = "0.2.6"
+version = "0.2.7"
 authors = ["FliegendeWurst <2012gdwu@web.de>"]
 license = "GPL-2.0"
 edition = "2018"
@@ -16,7 +16,7 @@ url = "2.1.1"
 futures-util = "0.3.4"
 regex = "1.3.7"
 lazy_static = "1.4.0"
-parking_lot = "0.10.2"
+parking_lot = "0.11.0"
 structopt = "0.3.13"
 rpassword = "4.0.5"
 rprompt = "1.0.5"
