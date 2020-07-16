@@ -227,8 +227,32 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				return Ok(());
 			}
 			create_dir(&path).await?;
-			let list_url = format!("{}ilias.php?ref_id={}&cmdClass=xocteventgui&cmdNode=n7:mz:14p&baseClass=ilObjPluginDispatchGUI&lang=de&limit=800&cmd=asyncGetTableGUI&cmdMode=asynch", ILIAS_URL, url.ref_id);
-			let data = ilias.download(&list_url).await?;
+			let full_url = {
+				// first find the link to full video list
+				let list_url = format!("{}ilias.php?ref_id={}&cmdClass=xocteventgui&cmdNode=n7:mz:14p&baseClass=ilObjPluginDispatchGUI&lang=de&limit=20&cmd=asyncGetTableGUI&cmdMode=asynch", ILIAS_URL, url.ref_id);
+				log!(1, "Loading {}", list_url);
+				let data = ilias.download(&list_url).await?;
+				let html = data.text().await?;
+				let html = Html::parse_fragment(&html);
+				html.select(&a)
+					.filter_map(|link| link.value().attr("href"))
+					.filter(|href| href.contains("trows=800"))
+					.map(|x| x.to_string()).next().ok_or(anyhow!("video list link not found"))?
+			};
+			log!(1, "Rewriting {}", full_url);
+			let mut full_url = Url::parse(&format!("{}{}", ILIAS_URL, full_url))?;
+			let mut query_parameters = full_url.query_pairs().map(|(x,y)| (x.into_owned(), y.into_owned())).collect::<Vec<_>>();
+			for (key, value) in &mut query_parameters {
+				match &**key {
+					"cmd" => *value = "asyncGetTableGUI".into(),
+					"cmdClass" => *value = "xocteventgui".into(),
+					_ => {}
+				}
+			}
+			query_parameters.push(("cmdMode".into(), "asynch".into()));
+			full_url.query_pairs_mut().clear().extend_pairs(&query_parameters).finish();
+			log!(1, "Loading {}", full_url);
+			let data = ilias.download(&full_url.into_string()).await?;
 			let html = data.text().await?;
 			let html = Html::parse_fragment(&html);
 			for row in html.select(&video_tr) {
@@ -286,15 +310,12 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				.map(|x| x.as_str())
 				.ok_or(anyhow!("video src not found"))?
 				.ok_or(anyhow!("video src not string"))?;
-			if !ilias.opt.force {
-				if let Ok(meta) = fs::metadata(&path).await {
-					if ilias.opt.check_videos {
-						let head = ilias.client.head(url).send().await.context("HEAD request failed")?;
-						if let Some(len) = head.headers().get("content-length") {
-							if meta.len() != len.to_str()?.parse::<u64>()? {
-								log!(0, "Warning: {} was updated, consider moving the outdated file", relative_path.to_string_lossy());
-							}
-						}
+			let meta = fs::metadata(&path).await;
+			if !ilias.opt.force && meta.is_ok() && ilias.opt.check_videos {
+				let head = ilias.client.head(url).send().await.context("HEAD request failed")?;
+				if let Some(len) = head.headers().get("content-length") {
+					if meta.unwrap().len() != len.to_str()?.parse::<u64>()? {
+						log!(0, "Warning: {} was updated, consider moving the outdated file", relative_path.to_string_lossy());
 					}
 				}
 			} else {
