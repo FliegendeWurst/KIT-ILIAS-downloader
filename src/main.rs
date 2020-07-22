@@ -455,8 +455,13 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				log!(2, "Skipping download, link exists already");
 				return Ok(());
 			}
-			let head = ilias.client.head(&url.url).send().await.context("HEAD request failed")?;
-			let url = head.url().as_str();
+			let head_req_result = ilias.client.head(&url.url).send().await;
+			let url = match &head_req_result {
+				Err(e) => {
+					e.url().context("HEAD request failed")?.as_str()
+				},
+				Ok(head) => head.url().as_str()
+			};
 			if url.starts_with(ILIAS_URL) {
 				// is a link list
 				if fs::metadata(&path).await.is_err() {
