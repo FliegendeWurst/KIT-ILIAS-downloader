@@ -229,7 +229,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			create_dir(&path).await?;
 			let full_url = {
 				// first find the link to full video list
-				let list_url = format!("{}ilias.php?ref_id={}&cmdClass=xocteventgui&cmdNode=n7:mz:14p&baseClass=ilObjPluginDispatchGUI&lang=de&limit=20&cmd=asyncGetTableGUI&cmdMode=asynch", ILIAS_URL, url.ref_id);
+				let list_url = format!("{}ilias.php?ref_id={}&cmdClass=xocteventgui&cmdNode=n8:n0:14q&baseClass=ilObjPluginDispatchGUI&lang=de&limit=20&cmd=asyncGetTableGUI&cmdMode=asynch", ILIAS_URL, url.ref_id);
 				log!(1, "Loading {}", list_url);
 				let data = ilias.download(&list_url).await?;
 				let html = data.text().await?;
@@ -243,7 +243,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			let mut full_url = Url::parse(&format!("{}{}", ILIAS_URL, full_url))?;
 			let mut query_parameters = full_url.query_pairs().map(|(x,y)| (x.into_owned(), y.into_owned())).collect::<Vec<_>>();
 			for (key, value) in &mut query_parameters {
-				match &**key {
+				match key.as_ref() {
 					"cmd" => *value = "asyncGetTableGUI".into(),
 					"cmdClass" => *value = "xocteventgui".into(),
 					_ => {}
@@ -588,7 +588,7 @@ impl ILIAS {
 			.form(&json!({
 				"sendLogin": "1",
 				"idp_selection": "https://idp.scc.kit.edu/idp/shibboleth",
-				"target": "https://ilias.studium.kit.edu/shib_login.php?target=",
+				"target": "/shib_login.php?target=",
 				"home_organization_selection": "Mit KIT-Account anmelden"
 			}))
 			.send().await?;
