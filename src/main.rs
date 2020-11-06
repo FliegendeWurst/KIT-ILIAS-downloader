@@ -60,7 +60,7 @@ async fn main() {
 		Ok(desktop) => {
 			for item in desktop.items {
 				let mut path = ilias.opt.output.clone();
-				path.push(item.name());
+				path.push(file_escape(item.name()));
 				let ilias = Arc::clone(&ilias);
 				task::spawn(process_gracefully(ilias, path, item));
 			}
@@ -187,7 +187,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			};
 			for item in content {
 				let mut path = path.clone();
-				path.push(item.name());
+				path.push(file_escape(item.name()));
 				let ilias = Arc::clone(&ilias);
 				task::spawn(process_gracefully(ilias, path, item));
 			}
@@ -202,7 +202,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				}
 				let item = item.unwrap();
 				let mut path = path.clone();
-				path.push(item.name());
+				path.push(file_escape(item.name()));
 				let ilias = Arc::clone(&ilias);
 				task::spawn(process_gracefully(ilias, path, item));
 			}
@@ -270,7 +270,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 						continue;
 					}
 					let mut path = path.clone();
-					path.push(format!("{}.mp4", title));
+					path.push(format!("{}.mp4", file_escape(title)));
 					log!(1, "Found video: {}", title);
 					let video = Video {
 						url: URL::raw(link.value().attr("href").ok_or(anyhow!("video link without href"))?.to_owned())
@@ -360,9 +360,9 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				let mut path = path.clone();
 				let name = format!("{}_{}",
 					object.url().thr_pk.as_ref().context("thr_pk not found for thread")?,
-					link.text().collect::<String>().replace('/', "-").trim()
+					link.text().collect::<String>().trim()
 				);
-				path.push(name);
+				path.push(file_escape(&name));
 				// TODO: set modification date?
 				let saved_posts = {
 					match std::fs::read_dir(&path) { // TODO: make this async
@@ -399,7 +399,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				let data = post.select(&post_content).next().ok_or(anyhow!("post content not found"))?;
 				let data = data.inner_html();
 				let mut path = path.clone();
-				path.push(name);
+				path.push(file_escape(&name));
 				task::spawn(handle_gracefully(async move {
 					write_file_data(&path, &mut data.as_bytes()).await
 						.context("failed to write forum post")
@@ -445,7 +445,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				let name = row.select(&form_name).next().context("link without file name")?.text().collect::<String>().trim().to_owned();
 				let item = File { url, name };
 				let mut path = path.clone();
-				path.push(item.name());
+				path.push(file_escape(item.name()));
 				let ilias = Arc::clone(&ilias);
 				task::spawn(process_gracefully(ilias, path, item));
 			}
@@ -489,7 +489,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 					}
 					let head = head.unwrap();
 					let url = head.url().as_str();
-					path.push(name);
+					path.push(file_escape(&name));
 					write_file_data(&path, &mut url.as_bytes()).await?;
 					path.pop();
 				}
@@ -1020,4 +1020,8 @@ impl URL {
 			file,
 		})
 	}
+}
+
+fn file_escape(s: &str) -> String {
+	s.replace('/', "-").replace('\\', "-")
 }
