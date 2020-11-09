@@ -57,6 +57,15 @@ OPTIONS:
 !/Course/Tutorien/Tut* 3/
 ```
 
+### .iliaslogin
+
+If you don't want to enter your credentials every time you run the program, you can instead save your username and password in a file (`.iliaslogin`):
+
+```
+username
+password
+```
+
 ## Similar programs
 
 - https://github.com/brantsch/kit-ilias-fuse/
