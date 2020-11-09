@@ -28,7 +28,7 @@ const ILIAS_URL: &str = "https://ilias.studium.kit.edu/";
 
 #[tokio::main]
 async fn main() {
-	let opt = Opt::from_args();
+	let mut opt = Opt::from_args();
 	create_dir(&opt.output).await.expect("failed to create output directory");
 	// need this because task scheduling is WIP
 	// (would wait forever on paniced task)
@@ -39,9 +39,34 @@ async fn main() {
 		PANIC_HOOK.lock()(info);
 	}));
 
-	let user = rprompt::prompt_reply_stdout("Username: ").expect("username prompt");
-	let pass = rpassword::read_password_from_tty(Some("Password: ")).expect("password prompt");
-	let ilias = match ILIAS::login(opt, user, pass).await {
+	// load .iliasignore file
+	opt.output.push(".iliasignore");
+	let (ignore, error) = Gitignore::new(&opt.output);
+	if let Some(err) = error {
+		println!("Warning: .iliasignore error: {}", err);
+	}
+	opt.output.pop();
+	// loac .iliaslogin file
+	opt.output.push(".iliaslogin");
+	let login = std::fs::read_to_string(&opt.output);
+	let (user, pass) = if let Ok(login) = login {
+		let mut lines = login.split('\n');
+		let user = lines.next();
+		let pass = lines.next();
+		if user.is_some() && pass.is_some() {
+			let user = user.unwrap().trim();
+			let pass = pass.unwrap().trim();
+			(user.to_owned(), pass.to_owned())
+		} else {
+			println!("Warning: .iliaslogin incomplete");
+			ask_user_pass()
+		}
+	} else {
+		ask_user_pass()
+	};
+	opt.output.pop();
+
+	let ilias = match ILIAS::login(opt, user, pass, ignore).await {
 		Ok(ilias) => ilias,
 		Err(e) => {
 			print!("{:?}", e);
@@ -85,6 +110,12 @@ lazy_static!{
 	static ref TASKS_RUNNING: Mutex<usize> = Mutex::default();
 
 	static ref PANIC_HOOK: Mutex<Box<dyn Fn(&panic::PanicInfo) + Sync + Send + 'static>> = Mutex::new(Box::new(|_| {}));
+}
+
+fn ask_user_pass() -> (String, String) {
+	let user = rprompt::prompt_reply_stdout("Username: ").expect("username prompt");
+	let pass = rpassword::read_password_from_tty(Some("Password: ")).expect("password prompt");
+	(user, pass)
 }
 
 fn process_gracefully(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl Future<Output = ()> + Send { async move {
@@ -564,7 +595,7 @@ struct ILIAS {
 }
 
 impl ILIAS {
-	async fn login<S1: Into<String>, S2: Into<String>>(mut opt: Opt, user: S1, pass: S2) -> Result<Self> {
+	async fn login<S1: Into<String>, S2: Into<String>>(opt: Opt, user: S1, pass: S2, ignore: Gitignore) -> Result<Self> {
 		let user = user.into();
 		let pass = pass.into();
 		let client = Client::builder()
@@ -572,13 +603,6 @@ impl ILIAS {
 			.user_agent(concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")))
 			// timeout is infinite by default
 			.build()?;
-		// load .iliasignore file
-		opt.output.push(".iliasignore");
-		let (ignore, error) = Gitignore::new(&opt.output);
-		if let Some(err) = error {
-			println!("Warning: .iliasignore error: {}", err);
-		}
-		opt.output.pop();
 		let this = ILIAS {
 			opt, client, user, pass, ignore
 		};
