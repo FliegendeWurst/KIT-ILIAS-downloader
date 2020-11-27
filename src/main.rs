@@ -955,7 +955,7 @@ impl Object {
 			"ilobjsurveygui" => Survey { name, url },
 			"illmpresentationgui" => Presentation { name, url },
 			"ilrepositorygui" => match url.cmd.as_deref() {
-				Some("view") => Folder { name, url },
+				Some("view") | Some("render") => Folder { name, url },
 				Some(_) => Generic { name, url },
 				None => Course { name, url },
 			},
