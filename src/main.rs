@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, anyhow};
+use futures::future::{self, Either};
 use futures_channel::mpsc::UnboundedSender;
 use futures_util::{StreamExt, stream::TryStreamExt};
 use ignore::gitignore::Gitignore;
@@ -94,8 +95,12 @@ async fn main() {
 		},
 		Err(e) => println!("{:?}", e)
 	}
-	while let Some(task) = rx.next().await {
-		let _ = task.await;
+	loop {
+		match future::select(rx.next(), future::ready(())).await {
+			// if the channel is empty, all tasks are completed
+			Either::Left((task, _)) => if let Some(task) = task { let _ = task.await; } else { break },
+			Either::Right(_) => break
+		}
 	}
 	if ilias.opt.content_tree {
 		// restore fast page loading times
