@@ -1055,6 +1055,11 @@ impl URL {
 	}
 }
 
+#[cfg(not(target_os = "windows"))]
+const INVALID: &'static [char] = &['/', '\\'];
+#[cfg(target_os = "windows")]
+const INVALID: &'static [char] = &['/', '\\', ':', '<', '>', '"', '|', '?', '*'];
+
 fn file_escape(s: &str) -> String {
-	s.replace('/', "-").replace('\\', "-")
+	s.replace(INVALID, "-")
 }
