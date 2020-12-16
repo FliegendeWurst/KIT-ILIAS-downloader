@@ -15,7 +15,7 @@ use tokio::io::stream_reader;
 use tokio::task::{self, JoinHandle};
 use url::Url;
 
-use std::default::Default;
+use std::{collections::HashSet, default::Default};
 use std::future::Future;
 use std::io;
 use std::panic;
@@ -465,6 +465,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 		ExerciseHandler { url, .. } => {
 			create_dir(&path).await?;
 			let html = ilias.get_html(&url.url).await?;
+			let mut filenames = HashSet::new();
 			for row in html.select(&form_group) {
 				let link = row.select(&a).next();
 				if link.is_none() {
@@ -485,7 +486,23 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				let name = row.select(&form_name).next().context("link without file name")?.text().collect::<String>().trim().to_owned();
 				let item = File { url, name };
 				let mut path = path.clone();
-				path.push(file_escape(item.name()));
+				// handle files with the same name
+				let filename = file_escape(item.name());
+				let mut parts = filename.rsplitn(2, '.');
+				let extension = parts.next().unwrap_or(&filename);
+				let name = parts.next().unwrap_or("");
+				let mut unique_filename = filename.clone();
+				let mut i = 1;
+				while filenames.contains(&unique_filename) {
+					i += 1;
+					if name != "" {
+						unique_filename = format!("{}{}.{}", name, i, extension);
+					} else {
+						unique_filename = format!("{}{}", extension, i);
+					}
+				}
+				filenames.insert(unique_filename.clone());
+				path.push(unique_filename);
 				let ilias = Arc::clone(&ilias);
 				spawn!(process_gracefully(ilias, path, item));
 			}
