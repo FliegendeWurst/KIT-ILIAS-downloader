@@ -620,13 +620,18 @@ impl ILIAS {
 				"home_organization_selection": "Mit KIT-Account anmelden"
 			}))
 			.send().await?;
+		let url = session_establishment.url().clone();
+		let text = session_establishment.text().await?;
+		let dom_sso = Html::parse_document(text.as_str());
+		let csrf_token = dom_sso.select(&Selector::parse(r#"input[name="csrf_token"]"#).unwrap()).next().context("no csrf token")?;
 		println!("Logging into Shibboleth..");
 		let login_response = this.client
-			.post(session_establishment.url().clone())
+			.post(url)
 			.form(&json!({
 				"j_username": &this.user,
 				"j_password": &this.pass,
-				"_eventId_proceed": ""
+				"_eventId_proceed": "",
+				"csrf_token": csrf_token.value().attr("value").ok_or(anyhow!("no csrf token"))?,
 			}))
 			.send().await?.text().await?;
 		let dom = Html::parse_document(&login_response);
