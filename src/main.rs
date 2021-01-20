@@ -11,8 +11,8 @@ use scraper::{ElementRef, Html, Selector};
 use serde_json::json;
 use structopt::StructOpt;
 use tokio::fs;
-use tokio::io::stream_reader;
 use tokio::task::{self, JoinHandle};
+use tokio_util::io::StreamReader;
 use url::Url;
 
 use std::{collections::HashSet, default::Default};
@@ -138,7 +138,7 @@ fn process_gracefully(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl Fut
 				break;
 			}
 		}
-		tokio::time::delay_for(Duration::from_millis(50)).await;
+		tokio::time::sleep(Duration::from_millis(50)).await;
 	}
 	let path_text = path.to_string_lossy().into_owned();
 	if let Err(e) = process(ilias, path, obj).await.context("failed to process URL") {
@@ -256,7 +256,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				return Ok(());
 			}
 			let data = ilias.download(&url.url).await?;
-			let mut reader = stream_reader(data.bytes_stream().map_err(|x| {
+			let mut reader = StreamReader::new(data.bytes_stream().map_err(|x| {
 				io::Error::new(io::ErrorKind::Other, x)
 			}));
 			log!(0, "Writing {}", relative_path.to_string_lossy());
@@ -360,7 +360,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				}
 			} else {
 				let resp = ilias.download(&url).await?;
-				let mut reader = stream_reader(resp.bytes_stream().map_err(|x| {
+				let mut reader = StreamReader::new(resp.bytes_stream().map_err(|x| {
 					io::Error::new(io::ErrorKind::Other, x)
 				}));
 				log!(0, "Writing {}", relative_path.to_string_lossy());
