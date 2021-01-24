@@ -43,3 +43,10 @@ jobs:
     # there are currently no automated tests
     - name: Run tests
       run: cargo test --release --verbose
+    - name: Archive artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: Binaries
+        path: |
+          target/release/KIT-ILIAS-downloader
+          target/release/KIT-ILIAS-downloader.exe
