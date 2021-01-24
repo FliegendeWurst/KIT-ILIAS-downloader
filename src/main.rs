@@ -31,6 +31,7 @@ const ILIAS_URL: &str = "https://ilias.studium.kit.edu/";
 #[tokio::main]
 async fn main() {
 	let mut opt = Opt::from_args();
+	opt.output = fs::canonicalize(opt.output); // use long paths on Windows
 	create_dir(&opt.output).await.expect("failed to create output directory");
 	// need this because task scheduling is WIP
 	// (would wait forever on paniced task)
