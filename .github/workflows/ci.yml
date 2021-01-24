@@ -1,45 +1,45 @@
 name: CI
 
 on:
-	push:
-		branches: [ master ]
-	pull_request:
-		branches: [ master ]
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
 
 env:
-	CARGO_TERM_COLOR: always
+  CARGO_TERM_COLOR: always
 
 jobs:
-	build:
+  build:
 
-		runs-on: ${{ matrix.os }}
-		
-		strategy:
-			matrix:
-				os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
 
-		steps:
-		- uses: actions/checkout@v2
-		- name: Install Rust toolchain
-			uses: actions-rs/toolchain@v1
-			with:
-				toolchain: stable
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
 
-		- name: Cache cargo directories
-			uses: actions/cache@v2
-			with:
-				path: |
-					~/.cargo/registry
-					~/.cargo/git
-				key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    - name: Cache cargo directories
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-		- name: Cache cargo target dir
-			uses: actions/cache@v2
-			with:
-				path: target
-				key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-		- name: Build
-			run: cargo build --release --verbose
-		# there are currently no automated tests
-		- name: Run tests
-			run: cargo test --release --verbose
+    - name: Cache cargo target dir
+      uses: actions/cache@v2
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+    - name: Build
+      run: cargo build --release --verbose
+    # there are currently no automated tests
+    - name: Run tests
+      run: cargo test --release --verbose
