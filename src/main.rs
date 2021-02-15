@@ -270,7 +270,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			create_dir(&path).await?;
 			let full_url = {
 				// first find the link to full video list
-				let list_url = format!("{}ilias.php?ref_id={}&cmdClass=xocteventgui&cmdNode=n8:n0:14q&baseClass=ilObjPluginDispatchGUI&lang=de&limit=20&cmd=asyncGetTableGUI&cmdMode=asynch", ILIAS_URL, url.ref_id);
+				let list_url = format!("{}ilias.php?ref_id={}&cmdClass=xocteventgui&cmdNode=nc:n4:14u&baseClass=ilObjPluginDispatchGUI&lang=de&limit=20&cmd=asyncGetTableGUI&cmdMode=asynch", ILIAS_URL, url.ref_id);
 				log!(1, "Loading {}", list_url);
 				let data = ilias.download(&list_url).await?;
 				let html = data.text().await?;
