@@ -2,19 +2,18 @@
 
 Download content from ILIAS. That includes:
 
-* files (latest version)
+* files
+* exercise sheets and solutions
 * Opencast lectures
+* forum posts (beta)
 
 ## Installation
 
 Go to the [releases](../../releases) and get the executable for your operating system. Alternatively compile from source: (to get the latest updates)
 ```
 $ git clone https://github.com/FliegendeWurst/KIT-ILIAS-downloader
-...
 $ cd KIT-ILIAS-downloader
-$ cargo build --release
-...
-$ cp target/release/KIT-ILIAS-downloader [directory in $PATH]
+$ cargo install --path .
 ```
 
 ## Usage
@@ -25,7 +24,7 @@ Only content on your [personal desktop](https://ilias.studium.kit.edu/ilias.php?
 
 ```
 $ KIT-ILIAS-downloader --help
-KIT-ILIAS-downloader 0.2.5
+KIT-ILIAS-downloader 0.2.14
 
 USAGE:
     KIT-ILIAS-downloader [FLAGS] [OPTIONS] --output <output>
