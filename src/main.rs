@@ -172,7 +172,6 @@ mod selectors {
 		pub static ref post_row: Selector = Selector::parse(".ilFrmPostRow").unwrap();
 		pub static ref post_title: Selector = Selector::parse(".ilFrmPostTitle").unwrap();
 		pub static ref post_container: Selector = Selector::parse(".ilFrmPostContentContainer").unwrap();
-		pub static ref post_content: Selector = Selector::parse(".ilFrmPostContent").unwrap();
 		pub static ref post_attachments: Selector = Selector::parse(".ilFrmPostAttachmentsContainer").unwrap();
 		pub static ref span_small: Selector = Selector::parse("span.small").unwrap();
 		pub static ref forum_pages: Selector = Selector::parse("div.ilTableNav > table > tbody > tr > td > a").unwrap();
@@ -446,8 +445,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				let link = container.select(&a).next().ok_or(anyhow!("post link not found"))?;
 				let id = link.value().attr("id").ok_or(anyhow!("no id in thread link"))?.to_owned();
 				let name = format!("{}_{}_{}.html", id, author, title.trim());
-				let data = post.select(&post_content).next().ok_or(anyhow!("post content not found"))?;
-				let data = data.inner_html();
+				let data = container.inner_html();
 				let mut path = path.clone();
 				path.push(file_escape(&name));
 				spawn!(handle_gracefully(async move {
