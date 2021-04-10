@@ -9,7 +9,7 @@ edition = "2018"
 
 [dependencies]
 reqwest = { version = "0.11.0", default-features = false, features = ["cookies", "gzip", "json", "rustls-tls", "stream"] }
-tokio = { version = "1.0.2", features = ["full"] }
+tokio = { version = "1.0.2", features = ["fs", "macros", "net", "rt-multi-thread"] }
 tokio-util = { version = "0.6.1", features = ["io"] }
 serde_json = "1.0.51"
 scraper = "0.12.0"
