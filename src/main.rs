@@ -163,6 +163,7 @@ mod selectors {
 	lazy_static!{
 		pub static ref a: Selector = Selector::parse("a").unwrap();
 		pub static ref a_target_blank: Selector = Selector::parse(r#"a[target="_blank"]"#).unwrap();
+		pub static ref img: Selector = Selector::parse("img").unwrap();
 		pub static ref table: Selector = Selector::parse("table").unwrap();
 		pub static ref video_tr: Selector = Selector::parse(".ilTableOuter > div > table > tbody > tr").unwrap();
 		pub static ref links_in_table: Selector = Selector::parse("tbody tr td a").unwrap();
@@ -172,6 +173,7 @@ mod selectors {
 		pub static ref post_title: Selector = Selector::parse(".ilFrmPostTitle").unwrap();
 		pub static ref post_container: Selector = Selector::parse(".ilFrmPostContentContainer").unwrap();
 		pub static ref post_content: Selector = Selector::parse(".ilFrmPostContent").unwrap();
+		pub static ref post_attachments: Selector = Selector::parse(".ilFrmPostAttachmentsContainer").unwrap();
 		pub static ref span_small: Selector = Selector::parse("span.small").unwrap();
 		pub static ref forum_pages: Selector = Selector::parse("div.ilTableNav > table > tbody > tr > td > a").unwrap();
 		pub static ref alert_danger: Selector = Selector::parse("div.alert-danger").unwrap();
@@ -180,6 +182,7 @@ mod selectors {
 		pub static ref form_name: Selector = Selector::parse(".il_InfoScreenProperty").unwrap();
 
 		pub static ref cmd_node_regex: Regex = Regex::new(r#"cmdNode=uf:\w\w"#).unwrap();
+		pub static ref image_src_regex: Regex = Regex::new(r#"\./data/produktiv/mobs/mm_(\d+)/([^?]+).+"#).unwrap();
 	}
 }
 use crate::selectors::*;
@@ -299,7 +302,9 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			for row in html.select(&video_tr) {
 				let link = row.select(&a_target_blank).next();
 				if link.is_none() {
-					log!(0, "Warning: table row without link in {}", url.url);
+					if !row.text().any(|x| x == "Keine Einträge") {
+						log!(0, "Warning: table row without link in {}", url.url);
+					}
 					continue;
 				}
 				let link = link.unwrap();
@@ -373,9 +378,9 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				return Ok(());
 			}
 			create_dir(&path).await?;
-			let url = format!("{}ilias.php?ref_id={}&cmd=showThreads&cmdClass=ilrepositorygui&cmdNode=uf&baseClass=ilrepositorygui", ILIAS_URL, url.ref_id);
+			let url = &url.url;
 			let html = {
-				let data = ilias.download(&url);
+				let data = ilias.download(url);
 				let html_text = data.await?.text().await?;
 				let url = {
 					let html = Html::parse_document(&html_text);
@@ -428,6 +433,9 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				return Ok(());
 			}
 			create_dir(&path).await?;
+			let mut all_images = Vec::new();
+			let mut attachments = Vec::new();
+			{
 			let html = ilias.get_html(&url.url).await?;
 			for post in html.select(&post_row) {
 				let title = post.select(&post_title).next().ok_or(anyhow!("post title not found"))?.text().collect::<String>().replace('/', "-");
@@ -436,7 +444,8 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				let author = author.trim().split('|').nth(1).ok_or(anyhow!("author data in unknown format"))?.trim();
 				let container = post.select(&post_container).next().ok_or(anyhow!("post container not found"))?;
 				let link = container.select(&a).next().ok_or(anyhow!("post link not found"))?;
-				let name = format!("{}_{}_{}.html", link.value().attr("name").ok_or(anyhow!("post name in link not found"))?, author, title.trim());
+				let id = link.value().attr("id").ok_or(anyhow!("no id in thread link"))?.to_owned();
+				let name = format!("{}_{}_{}.html", id, author, title.trim());
 				let data = post.select(&post_content).next().ok_or(anyhow!("post content not found"))?;
 				let data = data.inner_html();
 				let mut path = path.clone();
@@ -445,6 +454,16 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 					write_file_data(&path, &mut data.as_bytes()).await
 						.context("failed to write forum post")
 				}));
+				let images = container.select(&img).map(|x| x.value().attr("src").map(|x| x.to_owned()));
+				for image in images {
+					let image = image.ok_or(anyhow!("no src on image"))?;
+					all_images.push((id.clone(), image));
+				}
+				if let Some(container) = container.select(&post_attachments).next() {
+					for attachment in container.select(&a) {
+						attachments.push((id.clone(), attachment.text().collect::<String>(), attachment.value().attr("href").map(|x| x.to_owned())));
+					}
+				}
 			}
 			// pagination
 			if let Some(pages) = html.select(&table).next() {
@@ -456,11 +475,37 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 						let next_page = Thread {
 							url: URL::from_href(last.value().attr("href").ok_or(anyhow!("page link not found"))?)?
 						};
-						spawn!(process_gracefully(ilias, path, next_page));
+						spawn!(process_gracefully(ilias, path.clone(), next_page));
 					}
 				} else {
 					log!(0, "Warning: unable to find pagination links in {}", url.url);
 				}
+			}
+			}
+			for (id, image) in all_images {
+				let src = URL::from_href(&image)?;
+				let dl = ilias.download(&src.url).await?;
+				let m = image_src_regex.captures(&image).ok_or_else(|| anyhow!(format!("image src {} unexpected format", image)))?;
+				let (media_id, filename) = (m.get(1).unwrap().as_str(), m.get(2).unwrap().as_str());
+				let mut path = path.clone();
+				path.push(file_escape(&format!("{}_{}_{}", id, media_id, filename)));
+				spawn!(handle_gracefully(async move {
+					let bytes = dl.bytes().await?;
+					write_file_data(&path, &mut &*bytes).await
+						.context("failed to write forum post image attachment")
+				}));
+			}
+			for (id, name, url) in attachments {
+				let url = url.ok_or(anyhow!("attachment without href"))?;
+				let src = URL::from_href(&url)?;
+				let dl = ilias.download(&src.url).await?;
+				let mut path = path.clone();
+				path.push(file_escape(&format!("{}_{}", id, name)));
+				spawn!(handle_gracefully(async move {
+					let bytes = dl.bytes().await?;
+					write_file_data(&path, &mut &*bytes).await
+						.context("failed to write forum post file attachment")
+				}));
 			}
 		},
 		ExerciseHandler { url, .. } => {
