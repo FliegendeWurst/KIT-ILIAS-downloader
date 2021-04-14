@@ -5,11 +5,11 @@ Download content from ILIAS. That includes:
 * files
 * exercise sheets and solutions
 * Opencast lectures
-* forum posts (beta)
+* forum posts
 
 ## Installation
 
-Go to the [releases](../../releases) and get the executable for your operating system. Alternatively compile from source: (to get the latest updates)
+Go to the [releases](../../releases) and get the executable for your operating system. Or compile from source:
 ```
 $ git clone https://github.com/FliegendeWurst/KIT-ILIAS-downloader
 $ cd KIT-ILIAS-downloader
@@ -18,7 +18,11 @@ $ cargo install --path .
 
 ## Usage
 
-Use `-o <directory>` to specify the download directory. Username and password have to be provided every time the program is run.
+Use `-o <directory>` to specify the download directory:
+
+```
+$ KIT-ILIAS-downloader -o ./ILIAS
+```
 
 Only content on your [personal desktop](https://ilias.studium.kit.edu/ilias.php?baseClass=ilPersonalDesktopGUI&cmd=jumpToSelectedItems) will be downloaded.
 
