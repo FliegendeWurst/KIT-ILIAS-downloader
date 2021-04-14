@@ -654,7 +654,7 @@ struct Opt {
 	#[structopt(short, long, default_value = "1")]
 	jobs: usize,
 
-	/// Proxy, e.g. socks5://127.0.0.1:1080
+	/// Proxy, e.g. socks5h://127.0.0.1:1080
 	#[structopt(short, long, default_value = "")]
 	proxy: String,
 }
