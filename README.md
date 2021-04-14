@@ -42,6 +42,7 @@ FLAGS:
 OPTIONS:
     -j, --jobs <jobs>        Parallel download jobs [default: 1]
     -o, --output <output>    Output directory
+    -p, --proxy <proxy>      Proxy, e.g. socks5h://127.0.0.1:1080 [default: ""]
 ```
 
 ### .iliasignore

@@ -6,7 +6,7 @@ use ignore::gitignore::Gitignore;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use regex::Regex;
-use reqwest::Client;
+use reqwest::{Client, Proxy};
 use scraper::{ElementRef, Html, Selector};
 use serde_json::json;
 use structopt::StructOpt;
@@ -653,6 +653,10 @@ struct Opt {
 	/// Parallel download jobs
 	#[structopt(short, long, default_value = "1")]
 	jobs: usize,
+
+	/// Proxy, e.g. socks5h://127.0.0.1:1080
+	#[structopt(short, long, default_value = "")]
+	proxy: String,
 }
 
 struct ILIAS {
@@ -668,9 +672,14 @@ impl ILIAS {
 	async fn login<S1: Into<String>, S2: Into<String>>(opt: Opt, user: S1, pass: S2, ignore: Gitignore) -> Result<Self> {
 		let user = user.into();
 		let pass = pass.into();
-		let client = Client::builder()
+		let mut builder = Client::builder()
 			.cookie_store(true)
-			.user_agent(concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")))
+			.user_agent(concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")));
+		if opt.proxy != "" {
+			let proxy = Proxy::all(&opt.proxy)?;
+			builder = builder.proxy(proxy);
+		}
+		let client = builder
 			// timeout is infinite by default
 			.build()?;
 		let this = ILIAS {
