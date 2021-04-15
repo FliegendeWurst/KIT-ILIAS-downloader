@@ -1,3 +1,4 @@
+use colored::Colorize;
 use anyhow::{Context, Result, anyhow};
 use futures::future::{self, Either};
 use futures_channel::mpsc::UnboundedSender;
@@ -45,7 +46,7 @@ async fn main() {
 	opt.output.push(".iliasignore");
 	let (ignore, error) = Gitignore::new(&opt.output);
 	if let Some(err) = error {
-		println!("Warning: .iliasignore error: {}", err);
+		println!("Warning: {} {}", ".iliasignore error:".bright_yellow(), err.to_string().bright_yellow());
 	}
 	opt.output.pop();
 	// loac .iliaslogin file
@@ -60,7 +61,7 @@ async fn main() {
 			let pass = pass.unwrap().trim();
 			(user.to_owned(), pass.to_owned())
 		} else {
-			println!("Warning: .iliaslogin incomplete");
+			println!("Warning: {}", ".iliaslogin incomplete".bright_yellow());
 			ask_user_pass()
 		}
 	} else {
@@ -70,15 +71,15 @@ async fn main() {
 
 	let ilias = match ILIAS::login(opt, user, pass, ignore).await {
 		Ok(ilias) => ilias,
-		Err(e) => {
-			print!("{:?}", e);
+		Err(e) =>{
+			println!("Error: {}", format!("{:?}", e).bright_red());
 			std::process::exit(77);
 		}
 	};
 	if ilias.opt.content_tree {
 		// need this to get the content tree
 		if let Err(e) = ilias.client.get("https://ilias.studium.kit.edu/ilias.php?baseClass=ilRepositoryGUI&cmd=frameset&set_mode=tree&ref_id=1").send().await {
-			println!("Warning: could not enable content tree: {:?}", e);
+			println!("Warning: {} {}", "could not enable content tree:".bright_yellow(), format!("{:?}", e).bright_yellow());
 		}
 	}
 	let ilias = Arc::new(ilias);
@@ -106,7 +107,7 @@ async fn main() {
 	if ilias.opt.content_tree {
 		// restore fast page loading times
 		if let Err(e) = ilias.client.get("https://ilias.studium.kit.edu/ilias.php?baseClass=ilRepositoryGUI&cmd=frameset&set_mode=flat&ref_id=1").send().await {
-			println!("Warning: could not disable content tree: {:?}", e);
+			println!("Warning: {} {}", "could not disable content tree:".bright_yellow(), format!("{:?}", e).bright_yellow());
 		}
 	}
 }
@@ -143,14 +144,14 @@ fn process_gracefully(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl Fut
 	}
 	let path_text = path.to_string_lossy().into_owned();
 	if let Err(e) = process(ilias, path, obj).await.context("failed to process URL") {
-		println!("Syncing {}: {:?}", path_text, e);
+		println!("Syncing {}: {:?}", path_text, format!("{:?}", e).bright_red());
 	}
 	*TASKS_RUNNING.lock() -= 1;
 }}
 
 async fn handle_gracefully(fut: impl Future<Output = Result<()>>) {
 	if let Err(e) = fut.await {
-		println!("Error: {:?}", e);
+		println!("Error: {}", format!("{:?}", e).bright_red());
 	}
 }
 
@@ -221,7 +222,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 						if html.contains(r#"input[name="cmd[join]""#) {
 							return Ok(()); // ignore groups we are not in
 						}
-						log!(0, "Warning: {:?} falling back to incomplete course content extractor! {:?}", name, e);
+						log!(0, "Warning: {} {} {}", format!("{:?}", name).bright_yellow(), "falling back to incomplete course content extractor!".bright_yellow(), format!("{:?}", e).bright_yellow());
 						ilias.get_course_content(&url).await?.into_iter().flat_map(Result::ok).collect() // TODO: perhaps don't download almost the same content 3x
 					}
 				}
@@ -302,7 +303,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				let link = row.select(&a_target_blank).next();
 				if link.is_none() {
 					if !row.text().any(|x| x == "Keine Einträge") {
-						log!(0, "Warning: table row without link in {}", url.url);
+						log!(0, "Warning: {} {}", "table row without link in".bright_yellow(), url.url.to_string().bright_yellow());
 					}
 					continue;
 				}
@@ -360,7 +361,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				let head = ilias.client.head(url).send().await.context("HEAD request failed")?;
 				if let Some(len) = head.headers().get("content-length") {
 					if meta.unwrap().len() != len.to_str()?.parse::<u64>()? {
-						log!(0, "Warning: {} was updated, consider moving the outdated file", relative_path.to_string_lossy());
+						log!(0, "Warning: {} {}", relative_path.to_string_lossy().bright_yellow(), "was updated, consider moving the outdated file".bright_yellow());
 					}
 				}
 			} else {
@@ -397,7 +398,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			for row in html.select(&tr) {
 				let cells = row.select(&td).collect::<Vec<_>>();
 				if cells.len() != 6 {
-					log!(0, "Warning: unusual table row ({} cells) in {}", cells.len(), url);
+					log!(0, "Warning: {}{} {} {}", "unusual table row (".bright_yellow(), cells.len().to_string().bright_yellow(), "cells) in".bright_yellow(), url.to_string().bright_yellow());
 					continue;
 				}
 				let link = cells[1].select(&a).next().context("thread link not found")?;
@@ -476,7 +477,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 						spawn!(process_gracefully(ilias, path.clone(), next_page));
 					}
 				} else {
-					log!(0, "Warning: unable to find pagination links in {}", url.url);
+					log!(0, "Warning: {} {}", "unable to find pagination links in".bright_yellow(), url.url.to_string().bright_yellow());
 				}
 			}
 			}
@@ -585,7 +586,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 
 					let head = ilias.client.head(url.url.as_str()).send().await.context("HEAD request to web link failed");
 					if head.is_err() {
-						println!("Warning: {:?}", head.err().unwrap());
+						println!("Warning: {}", format!("{:?}", head.err().unwrap()).bright_green());
 						continue;
 					}
 					let head = head.unwrap();
@@ -732,8 +733,8 @@ impl ILIAS {
 				"RelayState": relay_state.value().attr("value").ok_or(anyhow!("no RelayState value"))?
 			}))
 			.send().await?;
-		println!("Logged in!");
-		Ok(this)
+        println!("{}", "Logged in!".bright_green());
+        Ok(this)
 	}
 
 	async fn download(&self, url: &str) -> Result<reqwest::Response> {
