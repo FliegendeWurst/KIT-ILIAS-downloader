@@ -23,3 +23,37 @@ pub async fn create_dir(path: &Path) -> Result<()> {
 	}
 	Ok(())
 }
+
+// remove once result_flattening is stable (https://github.com/rust-lang/rust/issues/70142)
+pub trait Result2 {
+	type V;
+	type E;
+	type F;
+
+	fn flatten2(self) -> Result<Self::V, Self::E>
+	where
+		Self::F: Into<Self::E>;
+
+	fn flatten_with<O: FnOnce(Self::F) -> Self::E>(self, op: O) -> Result<Self::V, Self::E>;
+}
+
+impl<V, E, F> Result2 for Result<Result<V, F>, E> {
+	type V = V;
+	type E = E;
+	type F = F;
+
+	fn flatten2(self) -> Result<Self::V, Self::E>
+	where
+		Self::F: Into<Self::E>,
+	{
+		self.flatten_with(|e| e.into())
+	}
+
+	fn flatten_with<O: FnOnce(Self::F) -> Self::E>(self, op: O) -> Result<Self::V, Self::E> {
+		match self {
+			Ok(Ok(v)) => Ok(v),
+			Ok(Err(f)) => Err(op(f)),
+			Err(e) => Err(e),
+		}
+	}
+}

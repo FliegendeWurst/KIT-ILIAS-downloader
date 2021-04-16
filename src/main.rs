@@ -1,12 +1,13 @@
+#![allow(clippy::comparison_to_empty, clippy::upper_case_acronyms)]
+
+use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
-use anyhow::{Context, Result, anyhow};
 use futures::future::{self, Either};
 use futures_channel::mpsc::UnboundedSender;
-use futures_util::{StreamExt, stream::TryStreamExt};
+use futures_util::{stream::TryStreamExt, StreamExt};
 use ignore::gitignore::Gitignore;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
-use regex::Regex;
 use reqwest::{Client, Proxy};
 use scraper::{ElementRef, Html, Selector};
 use serde_json::json;
@@ -16,23 +17,73 @@ use tokio::task::{self, JoinHandle};
 use tokio_util::io::StreamReader;
 use url::Url;
 
-use std::{collections::HashSet, default::Default};
 use std::future::Future;
 use std::io;
 use std::panic;
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{collections::HashSet, default::Default, sync::atomic::AtomicUsize};
 
 mod util;
 use util::*;
 
 const ILIAS_URL: &str = "https://ilias.studium.kit.edu/";
 
+static LOG_LEVEL: AtomicUsize = AtomicUsize::new(0);
+
+macro_rules! log {
+	($lvl:expr, $($t:expr),+) => {
+		#[allow(unused_comparisons)] // 0 <= 0
+		if $lvl <= LOG_LEVEL.load(Ordering::SeqCst) {
+			println!($($t),+);
+		}
+	}
+}
+
+macro_rules! info {
+	($t:tt) => {
+		println!($t);
+	};
+}
+
+macro_rules! success {
+	($t:tt) => {
+		println!("{}", format!($t).bright_green());
+	};
+}
+
+macro_rules! warning {
+	($e:expr) => {
+		println!("Warning: {}", format!("{:?}", $e).bright_yellow());
+	};
+	($msg:expr, $e:expr) => {
+		println!("Warning: {}", format!("{} {:?}", $msg, $e).bright_yellow());
+	};
+	($msg1:expr, $msg2:expr, $e:expr) => {
+		println!("Warning: {}", format!("{} {} {:?}", $msg1, $msg2, $e).bright_yellow());
+	};
+	(format => $($e:expr),+) => {
+		println!("Warning: {}", format!($($e),+));
+	};
+}
+
+macro_rules! error {
+	($($prefix:expr),+; $e:expr) => {
+		println!("{}: {}", format!($($prefix),+), format!("{:?}", $e).bright_red());
+	};
+	($e:expr) => {
+		println!("Error: {}", format!("{:?}", $e).bright_red());
+	};
+}
+
 #[tokio::main]
 async fn main() {
 	let mut opt = Opt::from_args();
-	opt.output = fs::canonicalize(opt.output).await.expect("failed to canonicalize directory"); // use long paths on Windows
+	// use UNC paths on Windows
+	opt.output = fs::canonicalize(opt.output).await.expect("failed to canonicalize directory");
+	LOG_LEVEL.store(opt.verbose, Ordering::SeqCst);
 	create_dir(&opt.output).await.expect("failed to create output directory");
 	// need this because task scheduling is WIP
 	// (would wait forever on paniced task)
@@ -46,7 +97,7 @@ async fn main() {
 	opt.output.push(".iliasignore");
 	let (ignore, error) = Gitignore::new(&opt.output);
 	if let Some(err) = error {
-		println!("Warning: {} {}", ".iliasignore error:".bright_yellow(), err.to_string().bright_yellow());
+		warning!(err);
 	}
 	opt.output.pop();
 	// loac .iliaslogin file
@@ -54,16 +105,11 @@ async fn main() {
 	let login = std::fs::read_to_string(&opt.output);
 	let (user, pass) = if let Ok(login) = login {
 		let mut lines = login.split('\n');
-		let user = lines.next();
-		let pass = lines.next();
-		if user.is_some() && pass.is_some() {
-			let user = user.unwrap().trim();
-			let pass = pass.unwrap().trim();
-			(user.to_owned(), pass.to_owned())
-		} else {
-			println!("Warning: {}", ".iliaslogin incomplete".bright_yellow());
-			ask_user_pass()
-		}
+		let user = lines.next().expect("missing user in .iliaslogin");
+		let pass = lines.next().expect("missing password in .iliaslogin");
+		let user = user.trim();
+		let pass = pass.trim();
+		(user.to_owned(), pass.to_owned())
 	} else {
 		ask_user_pass()
 	};
@@ -71,15 +117,15 @@ async fn main() {
 
 	let ilias = match ILIAS::login(opt, user, pass, ignore).await {
 		Ok(ilias) => ilias,
-		Err(e) =>{
-			println!("Error: {}", format!("{:?}", e).bright_red());
+		Err(e) => {
+			error!(e);
 			std::process::exit(77);
-		}
+		},
 	};
 	if ilias.opt.content_tree {
 		// need this to get the content tree
 		if let Err(e) = ilias.client.get("https://ilias.studium.kit.edu/ilias.php?baseClass=ilRepositoryGUI&cmd=frameset&set_mode=tree&ref_id=1").send().await {
-			println!("Warning: {} {}", "could not enable content tree:".bright_yellow(), format!("{:?}", e).bright_yellow());
+			warning!("could not enable content tree:", e);
 		}
 	}
 	let ilias = Arc::new(ilias);
@@ -95,34 +141,34 @@ async fn main() {
 				let _ = tx.unbounded_send(task::spawn(process_gracefully(ilias, path, item)));
 			}
 		},
-		Err(e) => println!("{:?}", e)
+		Err(e) => error!(e),
 	}
-	loop {
-		match future::select(rx.next(), future::ready(())).await {
-			// if the channel is empty, all tasks are completed
-			Either::Left((task, _)) => if let Some(task) = task { let _ = task.await; } else { break },
-			Either::Right(_) => break
+	while let Either::Left((task, _)) = future::select(rx.next(), future::ready(())).await {
+		if let Some(task) = task {
+			let _ = task.await;
+		} else {
+			break;
 		}
 	}
+	// channel is empty => all tasks are completed
 	if ilias.opt.content_tree {
 		// restore fast page loading times
 		if let Err(e) = ilias.client.get("https://ilias.studium.kit.edu/ilias.php?baseClass=ilRepositoryGUI&cmd=frameset&set_mode=flat&ref_id=1").send().await {
-			println!("Warning: {} {}", "could not disable content tree:".bright_yellow(), format!("{:?}", e).bright_yellow());
+			warning!("could not disable content tree:", e);
 		}
 	}
 }
 
-lazy_static!{
+lazy_static! {
 	static ref TASKS: Mutex<Option<UnboundedSender<JoinHandle<()>>>> = Mutex::default();
 	static ref TASKS_RUNNING: Mutex<usize> = Mutex::default();
-
 	static ref PANIC_HOOK: Mutex<Box<dyn Fn(&panic::PanicInfo) + Sync + Send + 'static>> = Mutex::new(Box::new(|_| {}));
 }
 
 macro_rules! spawn {
 	($e:expr) => {
 		let _ = TASKS.lock().as_ref().unwrap().unbounded_send(task::spawn($e));
-	}
+	};
 }
 
 fn ask_user_pass() -> (String, String) {
@@ -131,9 +177,16 @@ fn ask_user_pass() -> (String, String) {
 	(user, pass)
 }
 
-fn process_gracefully(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl Future<Output = ()> + Send { async move {
+// https://github.com/rust-lang/rust/issues/53690#issuecomment-418911229
+#[allow(clippy::manual_async_fn)]
+fn process_gracefully(
+	ilias: Arc<ILIAS>,
+	path: PathBuf,
+	obj: Object,
+) -> impl Future<Output = ()> + Send { async move {
 	loop {
-		{ // limit scope of lock
+		{
+			// limit scope of lock
 			let mut running = TASKS_RUNNING.lock();
 			if *running < ilias.opt.jobs {
 				*running += 1;
@@ -144,14 +197,14 @@ fn process_gracefully(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl Fut
 	}
 	let path_text = path.to_string_lossy().into_owned();
 	if let Err(e) = process(ilias, path, obj).await.context("failed to process URL") {
-		println!("Syncing {}: {:?}", path_text, format!("{:?}", e).bright_red());
+		error!("Syncing {}", path_text; e);
 	}
 	*TASKS_RUNNING.lock() -= 1;
 }}
 
 async fn handle_gracefully(fut: impl Future<Output = Result<()>>) {
 	if let Err(e) = fut.await {
-		println!("Error: {}", format!("{:?}", e).bright_red());
+		error!(e);
 	}
 }
 
@@ -161,7 +214,7 @@ mod selectors {
 	use regex::Regex;
 	use scraper::Selector;
 	// construct CSS selectors once
-	lazy_static!{
+	lazy_static! {
 		pub static ref a: Selector = Selector::parse("a").unwrap();
 		pub static ref a_target_blank: Selector = Selector::parse(r#"a[target="_blank"]"#).unwrap();
 		pub static ref img: Selector = Selector::parse("img").unwrap();
@@ -180,26 +233,14 @@ mod selectors {
 		pub static ref tree_highlighted: Selector = Selector::parse("span.ilHighlighted").unwrap();
 		pub static ref form_group: Selector = Selector::parse(".form-group").unwrap();
 		pub static ref form_name: Selector = Selector::parse(".il_InfoScreenProperty").unwrap();
-
 		pub static ref cmd_node_regex: Regex = Regex::new(r#"cmdNode=uf:\w\w"#).unwrap();
 		pub static ref image_src_regex: Regex = Regex::new(r#"\./data/produktiv/mobs/mm_(\d+)/([^?]+).+"#).unwrap();
+		pub static ref XOCT_REGEX: Regex = Regex::new(r#"(?m)<script>\s+xoctPaellaPlayer\.init\(([\s\S]+)\)\s+</script>"#).unwrap();
 	}
 }
 use crate::selectors::*;
 
-// see https://github.com/rust-lang/rust/issues/53690#issuecomment-418911229
-//async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) {
-fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Output = Result<()>> + Send { async move {
-	let log_level = ilias.opt.verbose;
-	macro_rules! log {
-		($lvl:expr, $($arg:expr),*) => {
-			#[allow(unused_comparisons)] // 0 >= 0
-			if log_level >= $lvl {
-				println!($($arg),*);
-			}
-		}
-	}
-
+async fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> Result<()> {
 	let relative_path = path.strip_prefix(&ilias.opt.output).unwrap();
 	if ilias.ignore.matched(relative_path, obj.is_dir()).is_ignore() {
 		log!(1, "Ignored {}", relative_path.to_string_lossy());
@@ -222,9 +263,9 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 						if html.contains(r#"input[name="cmd[join]""#) {
 							return Ok(()); // ignore groups we are not in
 						}
-						log!(0, "Warning: {} {} {}", format!("{:?}", name).bright_yellow(), "falling back to incomplete course content extractor!".bright_yellow(), format!("{:?}", e).bright_yellow());
+						warning!(name, "falling back to incomplete course content extractor!", e);
 						ilias.get_course_content(&url).await?.into_iter().flat_map(Result::ok).collect() // TODO: perhaps don't download almost the same content 3x
-					}
+					},
 				}
 			} else {
 				ilias.get_course_content(&url).await?.into_iter().flat_map(Result::ok).collect()
@@ -264,7 +305,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				io::Error::new(io::ErrorKind::Other, x)
 			}));
 			log!(0, "Writing {}", relative_path.to_string_lossy());
-			write_file_data(&path, &mut reader).await.context("failed to save file")?;
+			write_file_data(&path, &mut reader).await?;
 		},
 		PluginDispatch { url, .. } => {
 			if ilias.opt.no_videos {
@@ -281,16 +322,16 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				html.select(&a)
 					.filter_map(|link| link.value().attr("href"))
 					.filter(|href| href.contains("trows=800"))
-					.map(|x| x.to_string()).next().ok_or(anyhow!("video list link not found"))?
+					.map(|x| x.to_string()).next().context("video list link not found")?
 			};
 			log!(1, "Rewriting {}", full_url);
 			let mut full_url = Url::parse(&format!("{}{}", ILIAS_URL, full_url))?;
-			let mut query_parameters = full_url.query_pairs().map(|(x,y)| (x.into_owned(), y.into_owned())).collect::<Vec<_>>();
+			let mut query_parameters = full_url.query_pairs().map(|(x, y)| (x.into_owned(), y.into_owned())).collect::<Vec<_>>();
 			for (key, value) in &mut query_parameters {
 				match key.as_ref() {
 					"cmd" => *value = "asyncGetTableGUI".into(),
 					"cmdClass" => *value = "xocteventgui".into(),
-					_ => {}
+					_ => {},
 				}
 			}
 			query_parameters.push(("cmdMode".into(), "asynch".into()));
@@ -303,7 +344,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				let link = row.select(&a_target_blank).next();
 				if link.is_none() {
 					if !row.text().any(|x| x == "Keine Einträge") {
-						log!(0, "Warning: {} {}", "table row without link in".bright_yellow(), url.url.to_string().bright_yellow());
+						warning!(format => "table row without link in {}", url.url);
 					}
 					continue;
 				}
@@ -319,7 +360,12 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 					path.push(format!("{}.mp4", file_escape(title)));
 					log!(1, "Found video: {}", title);
 					let video = Video {
-						url: URL::raw(link.value().attr("href").ok_or(anyhow!("video link without href"))?.to_owned())
+						url: URL::raw(
+							link.value()
+								.attr("href")
+								.context("video link without href")?
+								.to_owned(),
+						),
 					};
 					let ilias = Arc::clone(&ilias);
 					spawn!(async {
@@ -329,9 +375,6 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			}
 		},
 		Video { url } => {
-			lazy_static!{
-				static ref XOCT_REGEX: Regex = Regex::new(r#"(?m)<script>\s+xoctPaellaPlayer\.init\(([\s\S]+)\)\s+</script>"#).unwrap();
-			}
 			if ilias.opt.no_videos {
 				return Ok(());
 			}
@@ -347,30 +390,39 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				let mut json_capture = XOCT_REGEX.captures_iter(&html);
 				let json = &json_capture.next().context("xoct player json not found")?[1];
 				log!(2, "{}", json);
-				let json = json.split(",\n").next().context("invalid xoct player json")?;
+				let json = json
+					.split(",\n")
+					.next()
+					.context("invalid xoct player json")?;
 				serde_json::from_str(&json.trim())?
 			};
 			log!(2, "{}", json);
 			let url = json
 				.pointer("/streams/0/sources/mp4/0/src")
 				.map(|x| x.as_str())
-				.ok_or(anyhow!("video src not found"))?
-				.ok_or(anyhow!("video src not string"))?;
+				.context("video src not found")?
+				.context("video src not string")?;
 			let meta = fs::metadata(&path).await;
 			if !ilias.opt.force && meta.is_ok() && ilias.opt.check_videos {
-				let head = ilias.client.head(url).send().await.context("HEAD request failed")?;
+				let head = ilias
+					.client
+					.head(url)
+					.send()
+					.await
+					.context("HEAD request failed")?;
 				if let Some(len) = head.headers().get("content-length") {
 					if meta.unwrap().len() != len.to_str()?.parse::<u64>()? {
-						log!(0, "Warning: {} {}", relative_path.to_string_lossy().bright_yellow(), "was updated, consider moving the outdated file".bright_yellow());
+						warning!(relative_path.to_string_lossy(), "was updated, consider moving the outdated file");
 					}
 				}
 			} else {
 				let resp = ilias.download(&url).await?;
-				let mut reader = StreamReader::new(resp.bytes_stream().map_err(|x| {
-					io::Error::new(io::ErrorKind::Other, x)
-				}));
+				let mut reader = StreamReader::new(
+				resp.bytes_stream()
+						.map_err(|x| io::Error::new(io::ErrorKind::Other, x)),
+				);
 				log!(0, "Writing {}", relative_path.to_string_lossy());
-				write_file_data(&path, &mut reader).await.context("failed to save video")?;
+				write_file_data(&path, &mut reader).await?;
 			}
 		},
 		Forum { url, .. } => {
@@ -385,11 +437,11 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				let url = {
 					let html = Html::parse_document(&html_text);
 					//https://ilias.studium.kit.edu/ilias.php?ref_id=122&cmdClass=ilobjforumgui&frm_tt_e39_122_trows=800&cmd=showThreads&cmdNode=uf:lg&baseClass=ilrepositorygui
-					html
-						.select(&a)
+					html.select(&a)
 						.flat_map(|x| x.value().attr("href"))
 						.find(|x| x.contains("trows=800"))
-						.context("can't find forum thread count selector (empty forum?)")?.to_owned()
+						.context("can't find forum thread count selector (empty forum?)")?
+						.to_owned()
 				};
 				let data = ilias.download(&url);
 				let html = data.await?.text().await?;
@@ -398,25 +450,47 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			for row in html.select(&tr) {
 				let cells = row.select(&td).collect::<Vec<_>>();
 				if cells.len() != 6 {
-					log!(0, "Warning: {}{} {} {}", "unusual table row (".bright_yellow(), cells.len().to_string().bright_yellow(), "cells) in".bright_yellow(), url.to_string().bright_yellow());
+					log!(
+						0,
+						"Warning: {}{} {} {}",
+						"unusual table row (".bright_yellow(),
+						cells.len().to_string().bright_yellow(),
+						"cells) in".bright_yellow(),
+						url.to_string().bright_yellow()
+					);
 					continue;
 				}
-				let link = cells[1].select(&a).next().context("thread link not found")?;
+				let link = cells[1]
+					.select(&a)
+					.next()
+					.context("thread link not found")?;
 				let object = Object::from_link(link, link)?;
 				let mut path = path.clone();
-				let name = format!("{}_{}",
-					object.url().thr_pk.as_ref().context("thr_pk not found for thread")?,
+				let name = format!(
+					"{}_{}",
+					object
+						.url()
+						.thr_pk
+						.as_ref()
+						.context("thr_pk not found for thread")?,
 					link.text().collect::<String>().trim()
 				);
 				path.push(file_escape(&name));
 				// TODO: set modification date?
 				let saved_posts = {
-					match std::fs::read_dir(&path) { // TODO: make this async
+					match std::fs::read_dir(&path) {
+						// TODO: make this async
 						Ok(stream) => stream.count(),
-						Err(_) => 0
+						Err(_) => 0,
 					}
 				};
-				let available_posts = cells[3].text().next().unwrap_or_default().trim().parse::<usize>().context("parsing post count failed")?;
+				let available_posts = cells[3]
+					.text()
+					.next()
+					.unwrap_or_default()
+					.trim()
+					.parse::<usize>()
+					.context("parsing post count failed")?;
 				if available_posts <= saved_posts && !ilias.opt.force {
 					continue;
 				}
@@ -436,73 +510,111 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			let mut all_images = Vec::new();
 			let mut attachments = Vec::new();
 			{
-			let html = ilias.get_html(&url.url).await?;
-			for post in html.select(&post_row) {
-				let title = post.select(&post_title).next().ok_or(anyhow!("post title not found"))?.text().collect::<String>().replace('/', "-");
-				let author = post.select(&span_small).next().ok_or(anyhow!("post author not found"))?;
-				let author = author.text().collect::<String>();
-				let author = author.trim().split('|').nth(1).ok_or(anyhow!("author data in unknown format"))?.trim();
-				let container = post.select(&post_container).next().ok_or(anyhow!("post container not found"))?;
-				let link = container.select(&a).next().ok_or(anyhow!("post link not found"))?;
-				let id = link.value().attr("id").ok_or(anyhow!("no id in thread link"))?.to_owned();
-				let name = format!("{}_{}_{}.html", id, author, title.trim());
-				let data = container.inner_html();
-				let mut path = path.clone();
-				path.push(file_escape(&name));
-				spawn!(handle_gracefully(async move {
-					write_file_data(&path, &mut data.as_bytes()).await
-						.context("failed to write forum post")
-				}));
-				let images = container.select(&img).map(|x| x.value().attr("src").map(|x| x.to_owned()));
-				for image in images {
-					let image = image.ok_or(anyhow!("no src on image"))?;
-					all_images.push((id.clone(), image));
-				}
-				if let Some(container) = container.select(&post_attachments).next() {
-					for attachment in container.select(&a) {
-						attachments.push((id.clone(), attachment.text().collect::<String>(), attachment.value().attr("href").map(|x| x.to_owned())));
+				let html = ilias.get_html(&url.url).await?;
+				for post in html.select(&post_row) {
+					let title = post
+						.select(&post_title)
+						.next()
+						.context("post title not found")?
+						.text()
+						.collect::<String>();
+					let author = post
+						.select(&span_small)
+						.next()
+						.context("post author not found")?;
+					let author = author.text().collect::<String>();
+					let author = author
+						.trim()
+						.split('|')
+						.nth(1)
+						.context("author data in unknown format")?
+						.trim();
+					let container = post
+						.select(&post_container)
+						.next()
+						.context("post container not found")?;
+					let link = container.select(&a).next().context("post link not found")?;
+					let id = link
+						.value()
+						.attr("id")
+						.context("no id in thread link")?
+						.to_owned();
+					let name = format!("{}_{}_{}.html", id, author, title.trim());
+					let data = container.inner_html();
+					let mut path = path.clone();
+					path.push(file_escape(&name));
+					spawn!(handle_gracefully(async move {
+						write_file_data(&path, &mut data.as_bytes())
+							.await
+							.context("failed to write forum post")
+					}));
+					let images = container
+						.select(&img)
+						.map(|x| x.value().attr("src").map(|x| x.to_owned()));
+					for image in images {
+						let image = image.context("no src on image")?;
+						all_images.push((id.clone(), image));
+					}
+					if let Some(container) = container.select(&post_attachments).next() {
+						for attachment in container.select(&a) {
+							attachments.push((
+								id.clone(),
+								attachment.text().collect::<String>(),
+								attachment.value().attr("href").map(|x| x.to_owned()),
+							));
+						}
 					}
 				}
-			}
-			// pagination
-			if let Some(pages) = html.select(&table).next() {
-				if let Some(last) = pages.select(&links_in_table).last() {
-					let text = last.text().collect::<String>();
-					if text.trim() == ">>" {
-						// not last page yet
-						let ilias = Arc::clone(&ilias);
-						let next_page = Thread {
-							url: URL::from_href(last.value().attr("href").ok_or(anyhow!("page link not found"))?)?
-						};
-						spawn!(process_gracefully(ilias, path.clone(), next_page));
+				// pagination
+				if let Some(pages) = html.select(&table).next() {
+					if let Some(last) = pages.select(&links_in_table).last() {
+						let text = last.text().collect::<String>();
+						if text.trim() == ">>" {
+							// not last page yet
+							let ilias = Arc::clone(&ilias);
+							let next_page = Thread {
+								url: URL::from_href(
+									last.value().attr("href").context("page link not found")?,
+								)?,
+							};
+							spawn!(process_gracefully(ilias, path.clone(), next_page));
+						}
+					} else {
+						log!(
+							0,
+							"Warning: {} {}",
+							"unable to find pagination links in".bright_yellow(),
+							url.url.to_string().bright_yellow()
+						);
 					}
-				} else {
-					log!(0, "Warning: {} {}", "unable to find pagination links in".bright_yellow(), url.url.to_string().bright_yellow());
 				}
-			}
 			}
 			for (id, image) in all_images {
 				let src = URL::from_href(&image)?;
 				let dl = ilias.download(&src.url).await?;
-				let m = image_src_regex.captures(&image).ok_or_else(|| anyhow!(format!("image src {} unexpected format", image)))?;
+				let m = image_src_regex
+					.captures(&image)
+					.context(format!("image src {} unexpected format", image))?;
 				let (media_id, filename) = (m.get(1).unwrap().as_str(), m.get(2).unwrap().as_str());
 				let mut path = path.clone();
 				path.push(file_escape(&format!("{}_{}_{}", id, media_id, filename)));
 				spawn!(handle_gracefully(async move {
 					let bytes = dl.bytes().await?;
-					write_file_data(&path, &mut &*bytes).await
+					write_file_data(&path, &mut &*bytes)
+						.await
 						.context("failed to write forum post image attachment")
 				}));
 			}
 			for (id, name, url) in attachments {
-				let url = url.ok_or(anyhow!("attachment without href"))?;
+				let url = url.context("attachment without href")?;
 				let src = URL::from_href(&url)?;
 				let dl = ilias.download(&src.url).await?;
 				let mut path = path.clone();
 				path.push(file_escape(&format!("{}_{}", id, name)));
 				spawn!(handle_gracefully(async move {
 					let bytes = dl.bytes().await?;
-					write_file_data(&path, &mut &*bytes).await
+					write_file_data(&path, &mut &*bytes)
+						.await
 						.context("failed to write forum post file attachment")
 				}));
 			}
@@ -524,11 +636,21 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				let href = href.unwrap();
 				let url = URL::from_href(href)?;
 				let cmd = url.cmd.as_deref().unwrap_or("");
-				if cmd != "downloadFile" && cmd != "downloadGlobalFeedbackFile" && cmd != "downloadFeedbackFile" {
+				if cmd != "downloadFile"
+					&& cmd != "downloadGlobalFeedbackFile"
+					&& cmd != "downloadFeedbackFile"
+				{
 					continue;
 				}
 				// link is definitely just a download link to the exercise or the solution
-				let name = row.select(&form_name).next().context("link without file name")?.text().collect::<String>().trim().to_owned();
+				let name = row
+					.select(&form_name)
+					.next()
+					.context("link without file name")?
+					.text()
+					.collect::<String>()
+					.trim()
+					.to_owned();
 				let item = File { url, name };
 				let mut path = path.clone();
 				// handle files with the same name
@@ -559,10 +681,8 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 			}
 			let head_req_result = ilias.client.head(&url.url).send().await;
 			let url = match &head_req_result {
-				Err(e) => {
-					e.url().context("HEAD request failed")?.as_str()
-				},
-				Ok(head) => head.url().as_str()
+				Err(e) => e.url().context("HEAD request failed")?.as_str(),
+				Ok(head) => head.url().as_str(),
 			};
 			if url.starts_with(ILIAS_URL) {
 				// is a link list
@@ -574,8 +694,16 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				let urls = {
 					let html = ilias.get_html(url).await?;
 					html.select(&a)
-						.filter_map(|x| x.value().attr("href").map(|y| (y, x.text().collect::<String>())))
-						.map(|(x, y)| URL::from_href(x).map(|z| (z, y.trim().to_owned())).context("parsing weblink"))
+						.filter_map(|x| {
+							x.value()
+								.attr("href")
+								.map(|y| (y, x.text().collect::<String>()))
+						})
+						.map(|(x, y)| {
+							URL::from_href(x)
+								.map(|z| (z, y.trim().to_owned()))
+								.context("parsing weblink")
+						})
 						.collect::<Result<Vec<_>>>()
 				}?;
 
@@ -585,8 +713,8 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 					}
 
 					let head = ilias.client.head(url.url.as_str()).send().await.context("HEAD request to web link failed");
-					if head.is_err() {
-						println!("Warning: {}", format!("{:?}", head.err().unwrap()).bright_green());
+					if let Some(err) = head.as_ref().err() {
+						warning!(err);
 						continue;
 					}
 					let head = head.unwrap();
@@ -597,7 +725,7 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 				}
 			} else {
 				log!(0, "Writing {}", relative_path.to_string_lossy());
-				write_file_data(&path, &mut url.as_bytes()).await.context("failed to save weblink")?;
+				write_file_data(&path, &mut url.as_bytes()).await.context("failed to save weblink URL")?;
 			}
 		},
 		Wiki { .. } => {
@@ -611,10 +739,10 @@ fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> impl Future<Out
 		},
 		Generic { .. } => {
 			log!(1, "Ignored generic {:?}", obj)
-		}
+		},
 	}
 	Ok(())
-}}
+}
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = env!("CARGO_PKG_NAME"))]
@@ -643,7 +771,7 @@ struct Opt {
 	#[structopt(long)]
 	check_videos: bool,
 
-	/// Verbose logging (print objects downloaded)
+	/// Verbose logging
 	#[structopt(short, multiple = true, parse(from_occurrences))]
 	verbose: usize,
 
@@ -656,8 +784,8 @@ struct Opt {
 	jobs: usize,
 
 	/// Proxy, e.g. socks5h://127.0.0.1:1080
-	#[structopt(short, long, default_value = "")]
-	proxy: String,
+	#[structopt(short, long)]
+	proxy: Option<String>,
 }
 
 struct ILIAS {
@@ -666,27 +794,25 @@ struct ILIAS {
 	// TODO: use these for re-authentication in case of session timeout/invalidation
 	user: String,
 	pass: String,
-	client: Client
+	client: Client,
 }
 
 impl ILIAS {
-	async fn login<S1: Into<String>, S2: Into<String>>(opt: Opt, user: S1, pass: S2, ignore: Gitignore) -> Result<Self> {
+	async fn login(opt: Opt, user: impl Into<String>, pass: impl Into<String>, ignore: Gitignore) -> Result<Self> {
 		let user = user.into();
 		let pass = pass.into();
 		let mut builder = Client::builder()
 			.cookie_store(true)
 			.user_agent(concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")));
-		if opt.proxy != "" {
-			let proxy = Proxy::all(&opt.proxy)?;
+		if let Some(proxy) = opt.proxy.as_ref() {
+			let proxy = Proxy::all(proxy)?;
 			builder = builder.proxy(proxy);
 		}
 		let client = builder
 			// timeout is infinite by default
 			.build()?;
-		let this = ILIAS {
-			opt, client, user, pass, ignore
-		};
-		println!("Logging into ILIAS using KIT account..");
+		let this = ILIAS { opt, ignore, user, pass, client };
+		info!("Logging into ILIAS using KIT account..");
 		let session_establishment = this.client
 			.post("https://ilias.studium.kit.edu/Shibboleth.sso/Login")
 			.form(&json!({
@@ -699,48 +825,41 @@ impl ILIAS {
 		let url = session_establishment.url().clone();
 		let text = session_establishment.text().await?;
 		let dom_sso = Html::parse_document(text.as_str());
-		let csrf_token = dom_sso.select(&Selector::parse(r#"input[name="csrf_token"]"#).unwrap()).next().context("no csrf token")?;
-		println!("Logging into Shibboleth..");
+		let csrf_token = dom_sso
+			.select(&Selector::parse(r#"input[name="csrf_token"]"#).unwrap())
+			.next().context("no csrf token")?;
+		info!("Logging into Shibboleth..");
 		let login_response = this.client
 			.post(url)
 			.form(&json!({
 				"j_username": &this.user,
 				"j_password": &this.pass,
 				"_eventId_proceed": "",
-				"csrf_token": csrf_token.value().attr("value").ok_or(anyhow!("no csrf token"))?,
+				"csrf_token": csrf_token.value().attr("value").context("no csrf token")?,
 			}))
-			.send().await?.text().await?;
+			.send().await?
+			.text().await?;
 		let dom = Html::parse_document(&login_response);
-		/* TODO: OTP
-		login_soup = BeautifulSoup(login_response.text, 'lxml')
-		otp_inp = login_soup.find("input", attrs={"name": "j_tokenNumber"})
-		if otp_inp:
-			print("OTP Detected.")
-			otp = input("OTP token: ")
-			otp_url = otp_inp.parent.parent.parent['action']
-			otp_response = self.post('https://idp.scc.kit.edu'+otp_url, data={'j_tokenNumber':otp, "_eventId_proceed": ""})
-			login_soup = BeautifulSoup(otp_response.text, 'lxml')
-		*/
 		let saml = Selector::parse(r#"input[name="SAMLResponse"]"#).unwrap();
-		let saml = dom.select(&saml).next().context("no SAML response, incorrect password?")?;
+		let saml = dom
+			.select(&saml)
+			.next().context("no SAML response, incorrect password?")?;
 		let relay_state = Selector::parse(r#"input[name="RelayState"]"#).unwrap();
 		let relay_state = dom.select(&relay_state).next().context("no relay state")?;
-		println!("Logging into ILIAS..");
+		info!("Logging into ILIAS..");
 		this.client
 			.post("https://ilias.studium.kit.edu/Shibboleth.sso/SAML2/POST")
 			.form(&json!({
-				"SAMLResponse": saml.value().attr("value").ok_or(anyhow!("no SAML value"))?,
-				"RelayState": relay_state.value().attr("value").ok_or(anyhow!("no RelayState value"))?
+				"SAMLResponse": saml.value().attr("value").context("no SAML value")?,
+				"RelayState": relay_state.value().attr("value").context("no RelayState value")?
 			}))
 			.send().await?;
-        println!("{}", "Logged in!".bright_green());
-        Ok(this)
+		success!("Logged in!");
+		Ok(this)
 	}
 
 	async fn download(&self, url: &str) -> Result<reqwest::Response> {
-		if self.opt.verbose > 1 {
-			println!("Downloading {}", url);
-		}
+		log!(2, "Downloading {}", url);
 		if url.starts_with("http") || url.starts_with("ilias.studium.kit.edu") {
 			Ok(self.client.get(url).send().await?)
 		} else {
@@ -771,13 +890,14 @@ impl ILIAS {
 	fn get_items(html: &Html) -> Vec<Result<Object>> {
 		let container_items = Selector::parse("div.il_ContainerListItem").unwrap();
 		let container_item_title = Selector::parse("a.il_ContainerItemTitle").unwrap();
-		html.select(&container_items).map(|item| {
-			item
-				.select(&container_item_title)
-				.next()
-				.map(|link| Object::from_link(item, link))
-				.unwrap_or_else(|| Err(anyhow!("can't find link")))
-		}).collect()
+		html.select(&container_items)
+			.map(|item| {
+				item.select(&container_item_title)
+					.next()
+					.map(|link| Object::from_link(item, link))
+					.context("can't find link").flatten2()
+			})
+			.collect()
 	}
 
 	async fn get_course_content(&self, url: &URL) -> Result<Vec<Result<Object>>> {
@@ -787,10 +907,11 @@ impl ILIAS {
 
 	async fn personal_desktop(&self) -> Result<Dashboard> {
 		let html = self.get_html("https://ilias.studium.kit.edu/ilias.php?baseClass=ilPersonalDesktopGUI&cmd=jumpToSelectedItems").await?;
-		let items = ILIAS::get_items(&html).into_iter().flat_map(Result::ok).collect();
-		Ok(Dashboard {
-			items
-		})
+		let items = ILIAS::get_items(&html)
+			.into_iter()
+			.flat_map(Result::ok)
+			.collect();
+		Ok(Dashboard { items })
 	}
 
 	async fn get_course_content_tree(&self, ref_id: &str, cmd_node: &str) -> Result<Vec<Object>> {
@@ -803,12 +924,9 @@ impl ILIAS {
 		let html = self.get_html_fragment(&url).await?;
 		let mut items = Vec::new();
 		for link in html.select(&a) {
-			let href = link.value().attr("href").unwrap_or("");
-			if href == "" {
-				// disabled course
-				continue;
-			}
-			items.push(Object::from_link(link, link)?);
+			if link.value().attr("href").is_some() {
+				items.push(Object::from_link(link, link)?);
+			} // else: disabled course
 		}
 		Ok(items)
 	}
@@ -816,61 +934,24 @@ impl ILIAS {
 
 #[derive(Debug)]
 struct Dashboard {
-	items: Vec<Object>
+	items: Vec<Object>,
 }
 
 #[derive(Debug)]
 enum Object {
-	Course {
-		name: String,
-		url: URL
-	},
-	Folder {
-		name: String,
-		url: URL
-	},
-	File {
-		name: String,
-		url: URL
-	},
-	Forum {
-		name: String,
-		url: URL
-	},
-	Thread {
-		url: URL
-	},
-	Wiki {
-		name: String,
-		url: URL
-	},
-	ExerciseHandler {
-		name: String,
-		url: URL
-	},
-	Weblink {
-		name: String,
-		url: URL
-	},
-	Survey {
-		name: String,
-		url: URL
-	},
-	Presentation {
-		name: String,
-		url: URL
-	},
-	PluginDispatch {
-		name: String,
-		url: URL
-	},
-	Video {
-		url: URL,
-	},
-	Generic {
-		name: String,
-		url: URL
-	},
+	Course { name: String, url: URL },
+	Folder { name: String, url: URL },
+	File { name: String, url: URL },
+	Forum { name: String, url: URL },
+	Thread { url: URL },
+	Wiki { name: String, url: URL },
+	ExerciseHandler { name: String, url: URL },
+	Weblink { name: String, url: URL },
+	Survey { name: String, url: URL },
+	Presentation { name: String, url: URL },
+	PluginDispatch { name: String, url: URL },
+	Video { url: URL },
+	Generic { name: String, url: URL },
 }
 
 use Object::*;
@@ -878,17 +959,17 @@ use Object::*;
 impl Object {
 	fn name(&self) -> &str {
 		match self {
-			Course { name, .. } |
-				Folder { name, .. } |
-				File { name, .. } |
-				Forum { name, .. } |
-				Wiki { name, .. } |
-				Weblink { name, ..} |
-				Survey { name, .. } |
-				Presentation { name, .. } |
-				ExerciseHandler { name, .. } |
-				PluginDispatch { name, .. } |
-				Generic { name, .. } => &name,
+			Course { name, .. }
+			| Folder { name, .. }
+			| File { name, .. }
+			| Forum { name, .. }
+			| Wiki { name, .. }
+			| Weblink { name, .. }
+			| Survey { name, .. }
+			| Presentation { name, .. }
+			| ExerciseHandler { name, .. }
+			| PluginDispatch { name, .. }
+			| Generic { name, .. } => &name,
 			Thread { url } => &url.thr_pk.as_ref().unwrap(),
 			Video { url } => &url.url,
 		}
@@ -896,19 +977,19 @@ impl Object {
 
 	fn url(&self) -> &URL {
 		match self {
-			Course { url, .. } |
-				Folder { url, .. } |
-				File { url, .. } |
-				Forum { url, .. } |
-				Thread { url } |
-				Wiki { url, .. } |
-				Weblink { url, .. } |
-				Survey { url, .. } |
-				Presentation { url, .. } |
-				ExerciseHandler { url, .. } |
-				PluginDispatch { url, .. } |
-				Video { url } |
-				Generic { url, .. } => &url,
+			Course { url, .. }
+			| Folder { url, .. }
+			| File { url, .. }
+			| Forum { url, .. }
+			| Thread { url }
+			| Wiki { url, .. }
+			| Weblink { url, .. }
+			| Survey { url, .. }
+			| Presentation { url, .. }
+			| ExerciseHandler { url, .. }
+			| PluginDispatch { url, .. }
+			| Video { url }
+			| Generic { url, .. } => &url,
 		}
 	}
 
@@ -932,97 +1013,88 @@ impl Object {
 
 	fn is_dir(&self) -> bool {
 		match self {
-			Course { .. } |
-				Folder { .. } |
-				Forum { .. } |
-				Thread { .. } |
-				Wiki { .. } |
-				ExerciseHandler { .. } |
-				Presentation { .. } |
-				PluginDispatch { .. } => true,
-			File { .. } |
-				Video { .. } |
-				Weblink { .. } |
-				Survey { .. } |
-				Generic { .. } => false
+			Course { .. }
+			| Folder { .. }
+			| Forum { .. }
+			| Thread { .. }
+			| Wiki { .. }
+			| ExerciseHandler { .. }
+			| Presentation { .. }
+			| PluginDispatch { .. } => true,
+			File { .. } | Video { .. } | Weblink { .. } | Survey { .. } | Generic { .. } => false,
 		}
 	}
 
 	fn from_link(item: ElementRef, link: ElementRef) -> Result<Self> {
-		let mut name = link.text().collect::<String>().replace('/', "-").trim().to_owned();
+		let mut name = link
+			.text()
+			.collect::<String>()
+			.replace('/', "-")
+			.trim()
+			.to_owned();
 		let mut url = URL::from_href(link.value().attr("href").context("link missing href")?)?;
 
 		if url.thr_pk.is_some() {
-			return Ok(Thread {
-				url
-			});
+			return Ok(Thread { url });
 		}
 
-		if url.url.starts_with("https://ilias.studium.kit.edu/goto.php") {
+		if url
+			.url
+			.starts_with("https://ilias.studium.kit.edu/goto.php")
+		{
 			let target = url.target.as_deref().unwrap_or("NONE");
 			if target.starts_with("wiki_") {
 				return Ok(Wiki {
 					name,
-					url // TODO: insert ref_id here
+					url, // TODO: insert ref_id here
 				});
 			}
 			if target.starts_with("root_") {
 				// magazine link
-				return Ok(Generic {
-					name,
-					url
-				});
+				return Ok(Generic { name, url });
 			}
 			if target.starts_with("crs_") {
 				let ref_id = url.target.as_ref().unwrap().split('_').nth(1).unwrap();
 				url.ref_id = ref_id.to_owned();
-				return Ok(Course {
-					name,
-					url
-				});
+				return Ok(Course { name, url });
 			}
 			if target.starts_with("frm_") {
 				// TODO: extract post link? (this codepath should only be hit when parsing the content tree)
 				let ref_id = url.target.as_ref().unwrap().split('_').nth(1).unwrap();
 				url.ref_id = ref_id.to_owned();
-				return Ok(Forum {
-					name,
-					url
-				});
+				return Ok(Forum { name, url });
 			}
 			if target.starts_with("lm_") {
 				// fancy interactive task
-				return Ok(Presentation {
-					name,
-					url
-				});
+				return Ok(Presentation { name, url });
 			}
 			if target.starts_with("fold_") {
 				let ref_id = url.target.as_ref().unwrap().split('_').nth(1).unwrap();
 				url.ref_id = ref_id.to_owned();
-				return Ok(Folder {
-					name,
-					url
-				});
+				return Ok(Folder { name, url });
 			}
 			if target.starts_with("file_") {
 				if !target.ends_with("download") {
 					// download page containing metadata
-					return Ok(Generic {
-						name,
-						url
-					});
+					return Ok(Generic { name, url });
 				} else {
 					let item_prop = Selector::parse("span.il_ItemProperty").unwrap();
 					let mut item_props = item.select(&item_prop);
-					let ext = item_props.next().ok_or(anyhow!("cannot find file extension"))?;
-					let version = item_props.nth(1).ok_or(anyhow!("cannot find 3rd file metadata"))?.text().collect::<String>();
+					let ext = item_props.next().context("cannot find file extension")?;
+					let version = item_props
+						.nth(1)
+						.context("cannot find 3rd file metadata")?
+						.text()
+						.collect::<String>();
 					let version = version.trim();
-					if version.starts_with("Version: ") {
-						name.push_str("_v");
-						name.push_str(&version[9..]);
+					if let Some(v) = version.strip_prefix("Version: ") {
+						name += "_v";
+						name += v;
 					}
-					return Ok(File { name: format!("{}.{}", name, ext.text().collect::<String>().trim()), url });
+					return Ok(File {
+						name: format!("{}.{}", name, ext.text().collect::<String>().trim()),
+						url,
+					});
 				}
 			}
 			return Ok(Generic { name, url });
@@ -1045,7 +1117,7 @@ impl Object {
 				None => Course { name, url },
 			},
 			"ilobjplugindispatchgui" => PluginDispatch { name, url },
-			_ => Generic { name, url }
+			_ => Generic { name, url },
 		})
 	}
 }
@@ -1112,7 +1184,7 @@ impl URL {
 				"ref_id" => ref_id = v.into_owned(),
 				"target" => target = Some(v.into_owned()),
 				"file" => file = Some(v.into_owned()),
-				_ => {}
+				_ => {},
 			}
 		}
 		Ok(URL {
@@ -1132,9 +1204,9 @@ impl URL {
 }
 
 #[cfg(not(target_os = "windows"))]
-const INVALID: &'static [char] = &['/', '\\'];
+const INVALID: &[char] = &['/', '\\'];
 #[cfg(target_os = "windows")]
-const INVALID: &'static [char] = &['/', '\\', ':', '<', '>', '"', '|', '?', '*'];
+const INVALID: &[char] = &['/', '\\', ':', '<', '>', '"', '|', '?', '*'];
 
 fn file_escape(s: &str) -> String {
 	s.replace(INVALID, "-")
