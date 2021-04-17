@@ -111,7 +111,7 @@ async fn main() {
 		let pass = pass.trim();
 		(user.to_owned(), pass.to_owned())
 	} else {
-		ask_user_pass()
+		ask_user_pass(&opt).expect("credentials input")
 	};
 	opt.output.pop();
 
@@ -171,10 +171,48 @@ macro_rules! spawn {
 	};
 }
 
-fn ask_user_pass() -> (String, String) {
-	let user = rprompt::prompt_reply_stdout("Username: ").expect("username prompt");
-	let pass = rpassword::read_password_from_tty(Some("Password: ")).expect("password prompt");
-	(user, pass)
+fn ask_user_pass(opt: &Opt) -> Result<(String, String)> {
+	let user = if let Some(username) = opt.username.as_ref() {
+		username.clone()
+	} else {
+		rprompt::prompt_reply_stdout("Username: ").context("username prompt")?
+	};
+	#[cfg(feature = "keyring-auth")]
+	let (pass, should_store);
+	#[cfg(not(feature = "keyring-auth"))]
+	let pass;
+	cfg_if::cfg_if! { // TODO: deduplicate the logic below
+		if #[cfg(feature = "keyring-auth")] {
+			if let Some(password) = opt.password.as_ref() {
+				pass = password.clone();
+				should_store = true;
+			} else if opt.keyring {
+				let keyring = keyring::Keyring::new(env!("CARGO_PKG_NAME"), &user);
+				if let Ok(password) = keyring.get_password() {
+					pass = password;
+					should_store = false;
+				} else {
+					pass = rpassword::read_password_from_tty(Some("Password: ")).context("password prompt")?;
+					should_store = true;
+				}
+			} else {
+				pass = rpassword::read_password_from_tty(Some("Password: ")).context("password prompt")?;
+				should_store = true;
+			}
+		} else {
+			if let Some(password) = opt.password.as_ref() {
+				pass = password.clone();
+			} else {
+				pass = rpassword::read_password_from_tty(Some("Password: ")).context("password prompt")?;
+			}
+		}
+	};
+	#[cfg(feature = "keyring-auth")]
+	if should_store && opt.keyring {
+		let keyring = keyring::Keyring::new(env!("CARGO_PKG_NAME"), &user);
+		keyring.set_password(&pass).map_err(|x| anyhow!(x.to_string()))?;
+	}
+	Ok((user, pass))
 }
 
 // https://github.com/rust-lang/rust/issues/53690#issuecomment-418911229
@@ -786,6 +824,19 @@ struct Opt {
 	/// Proxy, e.g. socks5h://127.0.0.1:1080
 	#[structopt(short, long)]
 	proxy: Option<String>,
+
+	/// Use the system keyring
+	#[structopt(long)]
+	#[cfg(feature = "keyring-auth")]
+	keyring: bool,
+
+	/// KIT account username
+	#[structopt(short = "U", long)]
+	username: Option<String>,
+
+	/// KIT account password
+	#[structopt(short = "P", long)]
+	password: Option<String>,
 }
 
 struct ILIAS {

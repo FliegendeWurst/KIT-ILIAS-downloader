@@ -26,3 +26,9 @@ rprompt = "1.0.5"
 ignore = "0.4.14"
 anyhow = "1.0.28"
 colored = "2.0.0"
+keyring = { git = "https://github.com/FliegendeWurst/keyring-rs", branch = "application-name", optional = true }
+cfg-if = "1.0.0"
+
+[features]
+default = []
+keyring-auth = ["keyring"]
