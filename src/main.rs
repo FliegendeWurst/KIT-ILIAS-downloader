@@ -252,6 +252,7 @@ mod selectors {
 		pub static ref table: Selector = Selector::parse("table").unwrap();
 		pub static ref video_tr: Selector = Selector::parse(".ilTableOuter > div > table > tbody > tr").unwrap();
 		pub static ref links_in_table: Selector = Selector::parse("tbody tr td a").unwrap();
+		pub static ref th: Selector = Selector::parse("th").unwrap();
 		pub static ref td: Selector = Selector::parse("td").unwrap();
 		pub static ref tr: Selector = Selector::parse("tr").unwrap();
 		pub static ref post_row: Selector = Selector::parse(".ilFrmPostRow").unwrap();
@@ -479,6 +480,12 @@ async fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> Result<()
 				Html::parse_document(&html)
 			};
 			for row in html.select(&tr) {
+				if row.value().attr("class") == Some("hidden-print") {
+					continue; // thread count
+				}
+				if row.select(&th).next().is_some() {
+					continue; // table header
+				}
 				let cells = row.select(&td).collect::<Vec<_>>();
 				if cells.len() != 6 {
 					log!(
