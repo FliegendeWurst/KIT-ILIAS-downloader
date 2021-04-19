@@ -272,6 +272,8 @@ mod selectors {
 }
 use crate::selectors::*;
 
+const NO_ENTRIES: &str = "Keine Einträge";
+
 async fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> Result<()> {
 	let relative_path = path.strip_prefix(&ilias.opt.output).unwrap();
 	if ilias.ignore.matched(relative_path, obj.is_dir()).is_ignore() {
@@ -375,7 +377,7 @@ async fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> Result<()
 			for row in html.select(&video_tr) {
 				let link = row.select(&a_target_blank).next();
 				if link.is_none() {
-					if !row.text().any(|x| x == "Keine Einträge") {
+					if !row.text().any(|x| x == NO_ENTRIES) {
 						warning!(format => "table row without link in {}", url.url);
 					}
 					continue;
@@ -469,9 +471,17 @@ async fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> Result<()
 				let url = {
 					let html = Html::parse_document(&html_text);
 					//https://ilias.studium.kit.edu/ilias.php?ref_id=122&cmdClass=ilobjforumgui&frm_tt_e39_122_trows=800&cmd=showThreads&cmdNode=uf:lg&baseClass=ilrepositorygui
-					html.select(&a)
+					let thread_count_selector = html.select(&a)
 						.flat_map(|x| x.value().attr("href"))
-						.find(|x| x.contains("trows=800"))
+						.find(|x| x.contains("trows=800"));
+					if thread_count_selector.is_none() {
+						if let Some(cell) = html.select(&td).next() {
+							if cell.text().any(|x| x == NO_ENTRIES) {
+								return Ok(()); // empty forum
+							}
+						}
+					}
+					thread_count_selector
 						.context("can't find forum thread count selector (empty forum?)")?
 						.to_owned()
 				};
