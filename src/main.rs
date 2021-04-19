@@ -81,6 +81,8 @@ macro_rules! error {
 #[tokio::main]
 async fn main() {
 	let mut opt = Opt::from_args();
+	#[cfg(windows)]
+	colored::control::set_virtual_terminal(true);
 	// use UNC paths on Windows
 	opt.output = fs::canonicalize(opt.output).await.expect("failed to canonicalize directory");
 	LOG_LEVEL.store(opt.verbose, Ordering::SeqCst);

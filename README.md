@@ -19,7 +19,7 @@ $ cargo install --all-features --path .
 
 ## Usage
 
-First, open a terminal (use Powershell on Windows).
+First, open a terminal. Navigate to the directory that contains the downloaded binary.
 
 Use `-o <directory>` to specify the download directory:
 
@@ -78,7 +78,8 @@ OPTIONS:
 
 ### Credentials
 
-You can use the `--user` and `--keyring` options to get/store the password using the system password store:
+You can use the `--user` and `--keyring` options to get/store the password using the system password store.  
+If you use Linux, you'll have to compile from source to be able to use this option.
 ```
 $ KIT-ILIAS-downloader -U uabcd --keyring [...]
 ```
