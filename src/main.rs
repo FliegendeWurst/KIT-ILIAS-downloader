@@ -129,19 +129,29 @@ async fn main() {
 		}
 	}
 	let ilias = Arc::new(ilias);
-	let desktop = ilias.personal_desktop().await.context("Failed to load personal desktop");
 	let (tx, mut rx) = futures_channel::mpsc::unbounded::<JoinHandle<()>>();
 	*TASKS.lock() = Some(tx.clone());
-	match desktop {
-		Ok(desktop) => {
-			for item in desktop.items {
-				let mut path = ilias.opt.output.clone();
-				path.push(file_escape(item.name()));
-				let ilias = Arc::clone(&ilias);
-				let _ = tx.unbounded_send(task::spawn(process_gracefully(ilias, path, item)));
-			}
-		},
-		Err(e) => error!(e),
+	if let Some(url) = ilias.opt.sync_url.as_ref() {
+		for item in ilias.get_course_content(&URL::from_href(url).expect("invalid URL")).await.expect("invalid response") {
+			let item = item.expect("invalid item");
+			let ilias = Arc::clone(&ilias);
+			let mut path = ilias.opt.output.clone();
+			path.push(file_escape(item.name()));
+			tx.unbounded_send(task::spawn(process_gracefully(ilias, path, item))).unwrap();
+		}
+	} else {
+		let desktop = ilias.personal_desktop().await.context("Failed to load personal desktop");
+		match desktop {
+			Ok(desktop) => {
+				for item in desktop.items {
+					let mut path = ilias.opt.output.clone();
+					path.push(file_escape(item.name()));
+					let ilias = Arc::clone(&ilias);
+					let _ = tx.unbounded_send(task::spawn(process_gracefully(ilias, path, item)));
+				}
+			},
+			Err(e) => error!(e),
+		}
 	}
 	while let Either::Left((task, _)) = future::select(rx.next(), future::ready(())).await {
 		if let Some(task) = task {
@@ -837,6 +847,10 @@ struct Opt {
 	/// KIT account password
 	#[structopt(short = "P", long)]
 	password: Option<String>,
+
+	/// ILIAS page to download
+	#[structopt(long)]
+	sync_url: Option<String>,
 }
 
 struct ILIAS {
