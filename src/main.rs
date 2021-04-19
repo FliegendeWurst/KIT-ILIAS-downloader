@@ -640,12 +640,15 @@ async fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> Result<()
 			for (id, image) in all_images {
 				let src = URL::from_href(&image)?;
 				let dl = ilias.download(&src.url).await?;
-				let m = image_src_regex
-					.captures(&image)
-					.context(format!("image src {} unexpected format", image))?;
-				let (media_id, filename) = (m.get(1).unwrap().as_str(), m.get(2).unwrap().as_str());
 				let mut path = path.clone();
-				path.push(file_escape(&format!("{}_{}_{}", id, media_id, filename)));
+				if let Some(m) = image_src_regex.captures(&image) {
+					// image uploaded to ILIAS
+					let (media_id, filename) = (m.get(1).unwrap().as_str(), m.get(2).unwrap().as_str());
+					path.push(file_escape(&format!("{}_{}_{}", id, media_id, filename)));
+				} else {
+					// external image
+					path.push(file_escape(&format!("{}_{}", id, image)));
+				}
 				spawn!(handle_gracefully(async move {
 					let bytes = dl.bytes().await?;
 					write_file_data(&path, &mut &*bytes)
