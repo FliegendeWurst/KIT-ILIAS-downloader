@@ -9,14 +9,17 @@ Download content from ILIAS. That includes:
 
 ## Installation
 
-Go to the [releases](../../releases) and get the executable for your operating system. Or compile from source:
+Go to the [releases](../../releases) and get the executable for your operating system (Windows/Linux only).  
+Or compile from source (mandatory if you use a Mac):
 ```
 $ git clone https://github.com/FliegendeWurst/KIT-ILIAS-downloader
 $ cd KIT-ILIAS-downloader
-$ cargo install --path .
+$ cargo install --all-features --path .
 ```
 
 ## Usage
+
+First, open a terminal (use Powershell on Windows).
 
 Use `-o <directory>` to specify the download directory:
 
@@ -24,29 +27,41 @@ Use `-o <directory>` to specify the download directory:
 $ KIT-ILIAS-downloader -o ./ILIAS
 ```
 
-Only content on your [personal desktop](https://ilias.studium.kit.edu/ilias.php?baseClass=ilPersonalDesktopGUI&cmd=jumpToSelectedItems) will be downloaded.
+By default, only content on your [personal desktop](https://ilias.studium.kit.edu/ilias.php?baseClass=ilPersonalDesktopGUI&cmd=jumpToSelectedItems) will be downloaded.  
+Use the `--sync-url` option to download a specific page and its sub-pages: (the URL should be copied from an ILIAS link, not the browser URL bar)
+
+```
+$ KIT-ILIAS-downloader -o ./ILIAS/WS2021-HM1 --sync-url 'https://ilias.studium.kit.edu/ilias.php?ref_id=1276968&cmdClass=ilrepositorygui&cmdNode=uk&baseClass=ilRepositoryGUI'
+```
+
+### Options
 
 ```
 $ KIT-ILIAS-downloader --help
-KIT-ILIAS-downloader 0.2.14
+KIT-ILIAS-downloader 0.2.16
 
 USAGE:
     KIT-ILIAS-downloader [FLAGS] [OPTIONS] --output <output>
 
 FLAGS:
+        --check-videos    Re-check OpenCast lectures (slow)
         --content-tree    Use content tree (slow but thorough)
     -f                    Re-download already present files
     -t, --forum           Download forum content
     -h, --help            Prints help information
+        --keyring         Use the system keyring
     -n, --no-videos       Do not download Opencast videos
     -s, --skip-files      Do not download files
     -V, --version         Prints version information
-    -v                    Verbose logging (print objects downloaded)
+    -v                    Verbose logging
 
 OPTIONS:
-    -j, --jobs <jobs>        Parallel download jobs [default: 1]
-    -o, --output <output>    Output directory
-    -p, --proxy <proxy>      Proxy, e.g. socks5h://127.0.0.1:1080 [default: ""]
+    -j, --jobs <jobs>            Parallel download jobs [default: 1]
+    -o, --output <output>        Output directory
+    -P, --password <password>    KIT account password
+    -p, --proxy <proxy>          Proxy, e.g. socks5h://127.0.0.1:1080
+        --sync-url <sync-url>    ILIAS page to download
+    -U, --username <username>    KIT account username
 ```
 
 ### .iliasignore
@@ -61,10 +76,14 @@ OPTIONS:
 !/Course/Tutorien/Tut* 3/
 ```
 
-### .iliaslogin
+### Credentials
 
-If you don't want to enter your credentials every time you run the program, you can instead save your username and password in a file (`.iliaslogin`):
+You can use the `--user` and `--keyring` options to get/store the password using the system password store:
+```
+$ KIT-ILIAS-downloader -U uabcd --keyring [...]
+```
 
+You can also save your username and password in a `.iliaslogin` file:
 ```
 username
 password
