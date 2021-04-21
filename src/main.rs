@@ -7,7 +7,6 @@ use futures_channel::mpsc::UnboundedSender;
 use futures_util::{stream::TryStreamExt, StreamExt};
 use ignore::gitignore::Gitignore;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
-use lazy_static::lazy_static;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use reqwest::{Client, Proxy};
@@ -34,6 +33,10 @@ const ILIAS_URL: &str = "https://ilias.studium.kit.edu/";
 static LOG_LEVEL: AtomicUsize = AtomicUsize::new(0);
 static PROGRESS_BAR_ENABLED: AtomicBool = AtomicBool::new(false);
 static PROGRESS_BAR: Lazy<ProgressBar> = Lazy::new(|| ProgressBar::new(0));
+
+/// Global job queue
+static TASKS: Lazy<Mutex<Option<UnboundedSender<JoinHandle<()>>>>> = Lazy::new(Mutex::default);
+static TASKS_RUNNING: Lazy<Semaphore> = Lazy::new(|| Semaphore::new(0));
 
 macro_rules! log {
 	($lvl:expr, $($t:expr),+) => {
@@ -141,12 +144,18 @@ async fn main() {
 		PROGRESS_BAR.set_message("initializing..");
 	}
 	if let Some(url) = ilias.opt.sync_url.as_ref() {
-		for item in ilias.get_course_content(&URL::from_href(url).expect("invalid URL")).await.expect("invalid response") {
-			let item = item.expect("invalid item");
-			let ilias = Arc::clone(&ilias);
-			let mut path = ilias.opt.output.clone();
-			path.push(file_escape(item.name()));
-			tx.unbounded_send(task::spawn(process_gracefully(ilias, path, item))).unwrap();
+		// TODO: this should be unified with the download logic below
+		let course = ilias.get_course_content(&URL::from_href(url).expect("invalid URL")).await.expect("invalid response");
+		if let Some(s) = course.1.as_ref() {
+			let path = ilias.opt.output.join("course.html");
+			write_file_data(&path, &mut s.as_bytes()).await.expect("failed to write course page html");
+		}
+		for item in course.0 {
+			if let Ok(item) = item {
+				let ilias = Arc::clone(&ilias);
+				let path = ilias.opt.output.join(file_escape(item.name()));
+				tx.unbounded_send(task::spawn(process_gracefully(ilias, path, item))).unwrap();
+			}
 		}
 	} else {
 		let desktop = ilias.personal_desktop().await.context("Failed to load personal desktop");
@@ -181,11 +190,6 @@ async fn main() {
 		PROGRESS_BAR.set_style(ProgressStyle::default_bar().template("[{pos}/{len}] {msg}"));
 		PROGRESS_BAR.finish_with_message("done");
 	}
-}
-
-lazy_static! {
-	static ref TASKS: Mutex<Option<UnboundedSender<JoinHandle<()>>>> = Mutex::default();
-	static ref TASKS_RUNNING: Semaphore = Semaphore::new(0);
 }
 
 macro_rules! spawn {
@@ -264,34 +268,32 @@ async fn handle_gracefully(fut: impl Future<Output = Result<()>>) {
 
 #[allow(non_upper_case_globals)]
 mod selectors {
-	use lazy_static::lazy_static;
+	use once_cell::sync::Lazy;
 	use regex::Regex;
 	use scraper::Selector;
 	// construct CSS selectors once
-	lazy_static! {
-		pub static ref a: Selector = Selector::parse("a").unwrap();
-		pub static ref a_target_blank: Selector = Selector::parse(r#"a[target="_blank"]"#).unwrap();
-		pub static ref img: Selector = Selector::parse("img").unwrap();
-		pub static ref table: Selector = Selector::parse("table").unwrap();
-		pub static ref video_tr: Selector = Selector::parse(".ilTableOuter > div > table > tbody > tr").unwrap();
-		pub static ref links_in_table: Selector = Selector::parse("tbody tr td a").unwrap();
-		pub static ref th: Selector = Selector::parse("th").unwrap();
-		pub static ref td: Selector = Selector::parse("td").unwrap();
-		pub static ref tr: Selector = Selector::parse("tr").unwrap();
-		pub static ref post_row: Selector = Selector::parse(".ilFrmPostRow").unwrap();
-		pub static ref post_title: Selector = Selector::parse(".ilFrmPostTitle").unwrap();
-		pub static ref post_container: Selector = Selector::parse(".ilFrmPostContentContainer").unwrap();
-		pub static ref post_attachments: Selector = Selector::parse(".ilFrmPostAttachmentsContainer").unwrap();
-		pub static ref span_small: Selector = Selector::parse("span.small").unwrap();
-		pub static ref forum_pages: Selector = Selector::parse("div.ilTableNav > table > tbody > tr > td > a").unwrap();
-		pub static ref alert_danger: Selector = Selector::parse("div.alert-danger").unwrap();
-		pub static ref tree_highlighted: Selector = Selector::parse("span.ilHighlighted").unwrap();
-		pub static ref form_group: Selector = Selector::parse(".form-group").unwrap();
-		pub static ref form_name: Selector = Selector::parse(".il_InfoScreenProperty").unwrap();
-		pub static ref cmd_node_regex: Regex = Regex::new(r#"cmdNode=uf:\w\w"#).unwrap();
-		pub static ref image_src_regex: Regex = Regex::new(r#"\./data/produktiv/mobs/mm_(\d+)/([^?]+).+"#).unwrap();
-		pub static ref XOCT_REGEX: Regex = Regex::new(r#"(?m)<script>\s+xoctPaellaPlayer\.init\(([\s\S]+)\)\s+</script>"#).unwrap();
-	}
+	pub static a: Lazy<Selector> = Lazy::new(|| Selector::parse("a").unwrap());
+	pub static a_target_blank: Lazy<Selector> = Lazy::new(|| Selector::parse(r#"a[target="_blank"]"#).unwrap());
+	pub static img: Lazy<Selector> = Lazy::new(|| Selector::parse("img").unwrap());
+	pub static table: Lazy<Selector> = Lazy::new(|| Selector::parse("table").unwrap());
+	pub static video_tr: Lazy<Selector> = Lazy::new(|| Selector::parse(".ilTableOuter > div > table > tbody > tr").unwrap());
+	pub static links_in_table: Lazy<Selector> = Lazy::new(|| Selector::parse("tbody tr td a").unwrap());
+	pub static th: Lazy<Selector> = Lazy::new(|| Selector::parse("th").unwrap());
+	pub static td: Lazy<Selector> = Lazy::new(|| Selector::parse("td").unwrap());
+	pub static tr: Lazy<Selector> = Lazy::new(|| Selector::parse("tr").unwrap());
+	pub static post_row: Lazy<Selector> = Lazy::new(|| Selector::parse(".ilFrmPostRow").unwrap());
+	pub static post_title: Lazy<Selector> = Lazy::new(|| Selector::parse(".ilFrmPostTitle").unwrap());
+	pub static post_container: Lazy<Selector> = Lazy::new(|| Selector::parse(".ilFrmPostContentContainer").unwrap());
+	pub static post_attachments: Lazy<Selector> = Lazy::new(|| Selector::parse(".ilFrmPostAttachmentsContainer").unwrap());
+	pub static span_small: Lazy<Selector> = Lazy::new(|| Selector::parse("span.small").unwrap());
+	pub static forum_pages: Lazy<Selector> = Lazy::new(|| Selector::parse("div.ilTableNav > table > tbody > tr > td > a").unwrap());
+	pub static alert_danger: Lazy<Selector> = Lazy::new(|| Selector::parse("div.alert-danger").unwrap());
+	pub static form_group: Lazy<Selector> = Lazy::new(|| Selector::parse(".form-group").unwrap());
+	pub static form_name: Lazy<Selector> = Lazy::new(|| Selector::parse(".il_InfoScreenProperty").unwrap());
+	pub static cmd_node_regex: Lazy<Regex> = Lazy::new(|| Regex::new(r#"cmdNode=uf:\w\w"#).unwrap());
+	pub static image_src_regex: Lazy<Regex> = Lazy::new(|| Regex::new(r#"\./data/produktiv/mobs/mm_(\d+)/([^?]+).+"#).unwrap());
+	pub static XOCT_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?m)<script>\s+xoctPaellaPlayer\.init\(([\s\S]+)\)\s+</script>"#).unwrap());
+	pub static il_content_container: Lazy<Selector> = Lazy::new(|| Selector::parse("#ilContentContainer").unwrap());
 }
 use crate::selectors::*;
 
@@ -309,15 +311,17 @@ async fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> Result<()
 	}
 	log!(1, "Syncing {} {}", obj.kind(), relative_path.to_string_lossy());
 	log!(2, " URL: {}", obj.url().url);
+	if obj.is_dir() {
+		create_dir(&path).await?;
+	}
 	match &obj {
 		Course { url, name } => {
-			create_dir(&path).await?;
 			let content = if ilias.opt.content_tree {
 				let html = ilias.download(&url.url).await?.text().await?;
 				let cmd_node = cmd_node_regex.find(&html).context("can't find cmdNode")?.as_str()[8..].to_owned();
 				let content_tree = ilias.get_course_content_tree(&url.ref_id, &cmd_node).await;
 				match content_tree {
-					Ok(tree) => tree,
+					Ok(tree) => (tree.into_iter().map(Result::Ok).collect(), None),
 					Err(e) => {
 						// some folders are hidden on the course page and can only be found via the RSS feed / recent activity / content tree sidebar
 						// TODO: this is probably never the case for folders?
@@ -325,30 +329,28 @@ async fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> Result<()
 							return Ok(()); // ignore groups we are not in
 						}
 						warning!(name, "falling back to incomplete course content extractor!", e);
-						ilias.get_course_content(&url).await?.into_iter().flat_map(Result::ok).collect() // TODO: perhaps don't download almost the same content 3x
+						ilias.get_course_content(&url).await? // TODO: perhaps don't download almost the same content 3x
 					},
 				}
 			} else {
-				ilias.get_course_content(&url).await?.into_iter().flat_map(Result::ok).collect()
+				ilias.get_course_content(&url).await?
 			};
-			for item in content {
-				let mut path = path.clone();
-				path.push(file_escape(item.name()));
+			if let Some(s) = content.1.as_ref() {
+				let path = ilias.opt.output.join("course.html");
+				write_file_data(&path, &mut s.as_bytes()).await.expect("failed to write course page html");
+			}
+			for item in content.0 {
+				let item = item?;
+				let path = path.join(file_escape(item.name()));
 				let ilias = Arc::clone(&ilias);
 				spawn!(process_gracefully(ilias, path, item));
 			}
 		},
 		Folder { url, .. } => {
-			create_dir(&path).await?;
 			let content = ilias.get_course_content(&url).await?;
-			for item in content {
-				if item.is_err() {
-					log!(1, "Ignoring: {:?}", item.err().unwrap());
-					continue;
-				}
-				let item = item.unwrap();
-				let mut path = path.clone();
-				path.push(file_escape(item.name()));
+			for item in content.0 {
+				let item = item?;
+				let path = path.join(file_escape(item.name()));
 				let ilias = Arc::clone(&ilias);
 				spawn!(process_gracefully(ilias, path, item));
 			}
@@ -372,7 +374,6 @@ async fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> Result<()
 			if ilias.opt.no_videos {
 				return Ok(());
 			}
-			create_dir(&path).await?;
 			let full_url = {
 				// first find the link to full video list
 				let list_url = format!("{}ilias.php?ref_id={}&cmdClass=xocteventgui&cmdNode=nc:n4:14u&baseClass=ilObjPluginDispatchGUI&lang=de&limit=20&cmd=asyncGetTableGUI&cmdMode=asynch", ILIAS_URL, url.ref_id);
@@ -490,7 +491,6 @@ async fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> Result<()
 			if !ilias.opt.forum {
 				return Ok(());
 			}
-			create_dir(&path).await?;
 			let url = &url.url;
 			let html = {
 				let data = ilias.download(url);
@@ -581,7 +581,6 @@ async fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> Result<()
 			if !ilias.opt.forum {
 				return Ok(());
 			}
-			create_dir(&path).await?;
 			let mut all_images = Vec::new();
 			let mut attachments = Vec::new();
 			{
@@ -698,7 +697,6 @@ async fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> Result<()
 			}
 		},
 		ExerciseHandler { url, .. } => {
-			create_dir(&path).await?;
 			let html = ilias.get_html(&url.url).await?;
 			let mut filenames = HashSet::new();
 			for row in html.select(&form_group) {
@@ -986,18 +984,20 @@ impl ILIAS {
 		let container_items = Selector::parse("div.il_ContainerListItem").unwrap();
 		let container_item_title = Selector::parse("a.il_ContainerItemTitle").unwrap();
 		html.select(&container_items)
-			.map(|item| {
+			.flat_map(|item| {
 				item.select(&container_item_title)
 					.next()
 					.map(|link| Object::from_link(item, link))
-					.context("can't find link").flatten2()
+					// items without links are ignored
 			})
 			.collect()
 	}
 
-	async fn get_course_content(&self, url: &URL) -> Result<Vec<Result<Object>>> {
+	/// Returns subfolders and the main text on the course page.
+	async fn get_course_content(&self, url: &URL) -> Result<(Vec<Result<Object>>, Option<String>)> {
 		let html = self.get_html(&url.url).await?;
-		Ok(ILIAS::get_items(&html))
+		let main_text = html.select(&il_content_container).next().map(|x| x.inner_html());
+		Ok((ILIAS::get_items(&html), main_text))
 	}
 
 	async fn personal_desktop(&self) -> Result<Dashboard> {
@@ -1114,9 +1114,8 @@ impl Object {
 			| Thread { .. }
 			| Wiki { .. }
 			| ExerciseHandler { .. }
-			| Presentation { .. }
 			| PluginDispatch { .. } => true,
-			File { .. } | Video { .. } | Weblink { .. } | Survey { .. } | Generic { .. } => false,
+			_ => false,
 		}
 	}
 
