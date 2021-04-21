@@ -7,8 +7,7 @@ use futures_channel::mpsc::UnboundedSender;
 use futures_util::{stream::TryStreamExt, StreamExt};
 use ignore::gitignore::Gitignore;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
+use once_cell::sync::{Lazy, OnceCell};
 use reqwest::{Client, Proxy};
 use scraper::{ElementRef, Html, Selector};
 use serde_json::json;
@@ -18,12 +17,12 @@ use tokio::task::{self, JoinHandle};
 use tokio_util::io::StreamReader;
 use url::Url;
 
-use std::{future::Future, sync::atomic::AtomicBool};
+use std::future::Future;
 use std::io;
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::{collections::HashSet, default::Default, sync::atomic::AtomicUsize};
+use std::collections::HashSet;
 
 mod util;
 use util::*;
@@ -35,8 +34,14 @@ static PROGRESS_BAR_ENABLED: AtomicBool = AtomicBool::new(false);
 static PROGRESS_BAR: Lazy<ProgressBar> = Lazy::new(|| ProgressBar::new(0));
 
 /// Global job queue
-static TASKS: Lazy<Mutex<Option<UnboundedSender<JoinHandle<()>>>>> = Lazy::new(Mutex::default);
+static TASKS: OnceCell<UnboundedSender<JoinHandle<()>>> = OnceCell::new();
 static TASKS_RUNNING: Lazy<Semaphore> = Lazy::new(|| Semaphore::new(0));
+
+macro_rules! spawn {
+	($e:expr) => {
+		TASKS.get().unwrap().unbounded_send(task::spawn($e)).unwrap();
+	};
+}
 
 macro_rules! log {
 	($lvl:expr, $($t:expr),+) => {
@@ -74,7 +79,7 @@ macro_rules! warning {
 		println!("Warning: {}", format!("{} {} {:?}", $msg1, $msg2, $e).bright_yellow());
 	};
 	(format => $($e:expr),+) => {
-		println!("Warning: {}", format!($($e),+));
+		println!("Warning: {}", format!($($e),+).bright_yellow());
 	};
 }
 
@@ -89,13 +94,20 @@ macro_rules! error {
 
 #[tokio::main]
 async fn main() {
-	let mut opt = Opt::from_args();
+	let opt = Opt::from_args();
+	if let Err(e) = real_main(opt).await {
+		error!(e);
+	}
+}
+
+async fn real_main(mut opt: Opt) -> Result<()> {
+	LOG_LEVEL.store(opt.verbose, Ordering::SeqCst);
 	#[cfg(windows)]
 	let _ = colored::control::set_virtual_terminal(true);
+
 	// use UNC paths on Windows
-	opt.output = fs::canonicalize(opt.output).await.expect("failed to canonicalize directory");
-	LOG_LEVEL.store(opt.verbose, Ordering::SeqCst);
-	create_dir(&opt.output).await.expect("failed to create output directory");
+	opt.output = fs::canonicalize(opt.output).await.context("failed to canonicalize output directory")?;
+	create_dir(&opt.output).await.context("failed to create output directory")?;
 
 	// load .iliasignore file
 	opt.output.push(".iliasignore");
@@ -104,18 +116,19 @@ async fn main() {
 		warning!(err);
 	}
 	opt.output.pop();
+
 	// loac .iliaslogin file
 	opt.output.push(".iliaslogin");
 	let login = std::fs::read_to_string(&opt.output);
 	let (user, pass) = if let Ok(login) = login {
 		let mut lines = login.split('\n');
-		let user = lines.next().expect("missing user in .iliaslogin");
-		let pass = lines.next().expect("missing password in .iliaslogin");
+		let user = lines.next().context("missing user in .iliaslogin")?;
+		let pass = lines.next().context("missing password in .iliaslogin")?;
 		let user = user.trim();
 		let pass = pass.trim();
 		(user.to_owned(), pass.to_owned())
 	} else {
-		ask_user_pass(&opt).expect("credentials input")
+		ask_user_pass(&opt).context("credentials input failed")?
 	};
 	opt.output.pop();
 
@@ -134,7 +147,7 @@ async fn main() {
 	}
 	let ilias = Arc::new(ilias);
 	let (tx, mut rx) = futures_channel::mpsc::unbounded::<JoinHandle<()>>();
-	*TASKS.lock() = Some(tx.clone());
+	TASKS.get_or_init(|| tx.clone());
 	TASKS_RUNNING.add_permits(ilias.opt.jobs);
 	PROGRESS_BAR_ENABLED.store(atty::is(atty::Stream::Stdout), Ordering::SeqCst);
 	if PROGRESS_BAR_ENABLED.load(Ordering::SeqCst) {
@@ -145,30 +158,13 @@ async fn main() {
 	}
 	if let Some(url) = ilias.opt.sync_url.as_ref() {
 		// TODO: this should be unified with the download logic below
-		let course = ilias.get_course_content(&URL::from_href(url).expect("invalid URL")).await.expect("invalid response");
-		if let Some(s) = course.1.as_ref() {
-			let path = ilias.opt.output.join("course.html");
-			write_file_data(&path, &mut s.as_bytes()).await.expect("failed to write course page html");
-		}
-		for item in course.0 {
-			if let Ok(item) = item {
-				let ilias = Arc::clone(&ilias);
-				let path = ilias.opt.output.join(file_escape(item.name()));
-				tx.unbounded_send(task::spawn(process_gracefully(ilias, path, item))).unwrap();
-			}
-		}
+		let obj = Object::from_url(URL::from_href(url).expect("invalid URL"), "".to_owned(), None).expect("invalid object"); // name can be empty for first element
+		spawn!(process_gracefully(ilias.clone(), ilias.opt.output.clone(), obj));
 	} else {
-		let desktop = ilias.personal_desktop().await.context("Failed to load personal desktop");
-		match desktop {
-			Ok(desktop) => {
-				for item in desktop.items {
-					let mut path = ilias.opt.output.clone();
-					path.push(file_escape(item.name()));
-					let ilias = Arc::clone(&ilias);
-					let _ = tx.unbounded_send(task::spawn(process_gracefully(ilias, path, item)));
-				}
-			},
-			Err(e) => error!(e),
+		let desktop = ilias.personal_desktop().await.context("Failed to load personal desktop")?;
+		for item in desktop.items {
+			let path = ilias.opt.output.join(file_escape(item.name()));
+			tx.unbounded_send(task::spawn(process_gracefully(ilias.clone(), path, item))).unwrap();
 		}
 	}
 	while let Either::Left((task, _)) = future::select(rx.next(), future::ready(())).await {
@@ -190,12 +186,7 @@ async fn main() {
 		PROGRESS_BAR.set_style(ProgressStyle::default_bar().template("[{pos}/{len}] {msg}"));
 		PROGRESS_BAR.finish_with_message("done");
 	}
-}
-
-macro_rules! spawn {
-	($e:expr) => {
-		TASKS.lock().as_ref().unwrap().unbounded_send(task::spawn($e)).unwrap();
-	};
+	Ok(())
 }
 
 fn ask_user_pass(opt: &Opt) -> Result<(String, String)> {
@@ -299,7 +290,7 @@ use crate::selectors::*;
 
 const NO_ENTRIES: &str = "Keine Einträge";
 
-async fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> Result<()> {
+async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 	let relative_path = path.strip_prefix(&ilias.opt.output).unwrap();
 	if PROGRESS_BAR_ENABLED.load(Ordering::SeqCst) {
 		PROGRESS_BAR.inc(1);
@@ -461,8 +452,8 @@ async fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> Result<()
 			log!(2, "{}", json);
 			let url = json
 				.pointer("/streams/0/sources/mp4/0/src")
-				.map(|x| x.as_str())
 				.context("video src not found")?
+				.as_str()
 				.context("video src not string")?;
 			let meta = fs::metadata(&path).await;
 			if !ilias.opt.force && meta.is_ok() && ilias.opt.check_videos {
@@ -497,7 +488,6 @@ async fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> Result<()
 				let html_text = data.await?.text().await?;
 				let url = {
 					let html = Html::parse_document(&html_text);
-					//https://ilias.studium.kit.edu/ilias.php?ref_id=122&cmdClass=ilobjforumgui&frm_tt_e39_122_trows=800&cmd=showThreads&cmdNode=uf:lg&baseClass=ilrepositorygui
 					let thread_count_selector = html.select(&a)
 						.flat_map(|x| x.value().attr("href"))
 						.find(|x| x.contains("trows=800"));
@@ -525,13 +515,9 @@ async fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> Result<()
 				}
 				let cells = row.select(&td).collect::<Vec<_>>();
 				if cells.len() != 6 {
-					log!(
-						0,
+					warning!(format =>
 						"Warning: {}{} {} {}",
-						"unusual table row (".bright_yellow(),
-						cells.len().to_string().bright_yellow(),
-						"cells) in".bright_yellow(),
-						url.to_string().bright_yellow()
+						"unusual table row (", cells.len(), "cells) in", url.to_string()
 					);
 					continue;
 				}
@@ -569,7 +555,6 @@ async fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> Result<()
 				if available_posts <= saved_posts && !ilias.opt.force {
 					continue;
 				}
-				log!(0, "New posts in {:?}..", path);
 				let ilias = Arc::clone(&ilias);
 				spawn!(process_gracefully(ilias, path, object));
 			}
@@ -615,9 +600,10 @@ async fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> Result<()
 						.to_owned();
 					let name = format!("{}_{}_{}.html", id, author, title.trim());
 					let data = container.inner_html();
-					let mut path = path.clone();
-					path.push(file_escape(&name));
+					let path = path.join(file_escape(&name));
+					let relative_path = relative_path.join(file_escape(&name));
 					spawn!(handle_gracefully(async move {
+						log!(0, "Writing {}", relative_path.display());
 						write_file_data(&path, &mut data.as_bytes())
 							.await
 							.context("failed to write forum post")
@@ -795,9 +781,7 @@ async fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> Result<()
 					}
 					let head = head.unwrap();
 					let url = head.url().as_str();
-					path.push(file_escape(&name));
-					write_file_data(&path, &mut url.as_bytes()).await?;
-					path.pop();
+					write_file_data(path.join(file_escape(&name)), &mut url.as_bytes()).await?;
 				}
 			} else {
 				log!(0, "Writing {}", relative_path.to_string_lossy());
@@ -1120,14 +1104,17 @@ impl Object {
 	}
 
 	fn from_link(item: ElementRef, link: ElementRef) -> Result<Self> {
-		let mut name = link
+		let name = link
 			.text()
 			.collect::<String>()
 			.replace('/', "-")
 			.trim()
 			.to_owned();
-		let mut url = URL::from_href(link.value().attr("href").context("link missing href")?)?;
+		let url = URL::from_href(link.value().attr("href").context("link missing href")?)?;
+		Object::from_url(url, name, Some(item))
+	}
 
+	fn from_url(mut url: URL, mut name: String, item: Option<ElementRef>) -> Result<Self> {
 		if url.thr_pk.is_some() {
 			return Ok(Thread { url });
 		}
@@ -1173,7 +1160,7 @@ impl Object {
 					return Ok(Generic { name, url });
 				} else {
 					let item_prop = Selector::parse("span.il_ItemProperty").unwrap();
-					let mut item_props = item.select(&item_prop);
+					let mut item_props = item.context("can't construct file object without HTML object")?.select(&item_prop);
 					let ext = item_props.next().context("cannot find file extension")?;
 					let version = item_props
 						.nth(1)
@@ -1295,13 +1282,4 @@ impl URL {
 			file,
 		})
 	}
-}
-
-#[cfg(not(target_os = "windows"))]
-const INVALID: &[char] = &['/', '\\'];
-#[cfg(target_os = "windows")]
-const INVALID: &[char] = &['/', '\\', ':', '<', '>', '"', '|', '?', '*'];
-
-fn file_escape(s: &str) -> String {
-	s.replace(INVALID, "-")
 }
