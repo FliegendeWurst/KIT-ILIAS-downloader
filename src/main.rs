@@ -6,7 +6,9 @@ use futures::future::{self, Either};
 use futures_channel::mpsc::UnboundedSender;
 use futures_util::{stream::TryStreamExt, StreamExt};
 use ignore::gitignore::Gitignore;
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use reqwest::{Client, Proxy};
 use scraper::{ElementRef, Html, Selector};
@@ -17,7 +19,7 @@ use tokio::task::{self, JoinHandle};
 use tokio_util::io::StreamReader;
 use url::Url;
 
-use std::future::Future;
+use std::{future::Future, sync::atomic::AtomicBool};
 use std::io;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -30,12 +32,18 @@ use util::*;
 const ILIAS_URL: &str = "https://ilias.studium.kit.edu/";
 
 static LOG_LEVEL: AtomicUsize = AtomicUsize::new(0);
+static PROGRESS_BAR_ENABLED: AtomicBool = AtomicBool::new(false);
+static PROGRESS_BAR: Lazy<ProgressBar> = Lazy::new(|| ProgressBar::new(0));
 
 macro_rules! log {
 	($lvl:expr, $($t:expr),+) => {
 		#[allow(unused_comparisons)] // 0 <= 0
 		if $lvl <= LOG_LEVEL.load(Ordering::SeqCst) {
-			println!($($t),+);
+			if PROGRESS_BAR_ENABLED.load(Ordering::SeqCst) {
+				PROGRESS_BAR.println(format!($($t),+));
+			} else {
+				println!($($t),+);
+			}
 		}
 	}
 }
@@ -125,6 +133,13 @@ async fn main() {
 	let (tx, mut rx) = futures_channel::mpsc::unbounded::<JoinHandle<()>>();
 	*TASKS.lock() = Some(tx.clone());
 	TASKS_RUNNING.add_permits(ilias.opt.jobs);
+	PROGRESS_BAR_ENABLED.store(atty::is(atty::Stream::Stdout), Ordering::SeqCst);
+	if PROGRESS_BAR_ENABLED.load(Ordering::SeqCst) {
+		PROGRESS_BAR.set_draw_target(ProgressDrawTarget::stderr_nohz());
+		PROGRESS_BAR.set_style(ProgressStyle::default_bar().template("[{pos}/{len}+] {msg}"));
+		PROGRESS_BAR.inc_length(1);
+		PROGRESS_BAR.set_message("initializing..");
+	}
 	if let Some(url) = ilias.opt.sync_url.as_ref() {
 		for item in ilias.get_course_content(&URL::from_href(url).expect("invalid URL")).await.expect("invalid response") {
 			let item = item.expect("invalid item");
@@ -160,6 +175,11 @@ async fn main() {
 		if let Err(e) = ilias.client.get("https://ilias.studium.kit.edu/ilias.php?baseClass=ilRepositoryGUI&cmd=frameset&set_mode=flat&ref_id=1").send().await {
 			warning!("could not disable content tree:", e);
 		}
+	}
+	if PROGRESS_BAR_ENABLED.load(Ordering::SeqCst) {
+		PROGRESS_BAR.inc(1);
+		PROGRESS_BAR.set_style(ProgressStyle::default_bar().template("[{pos}/{len}] {msg}"));
+		PROGRESS_BAR.finish_with_message("done");
 	}
 }
 
@@ -225,6 +245,9 @@ fn process_gracefully(
 	path: PathBuf,
 	obj: Object,
 ) -> impl Future<Output = ()> + Send { async move {
+	if PROGRESS_BAR_ENABLED.load(Ordering::SeqCst) {
+		PROGRESS_BAR.inc_length(1);
+	}
 	let permit = TASKS_RUNNING.acquire().await.unwrap();
 	let path_text = path.to_string_lossy().into_owned();
 	if let Err(e) = process(ilias, path, obj).await.context("failed to process URL") {
@@ -276,6 +299,10 @@ const NO_ENTRIES: &str = "Keine Einträge";
 
 async fn process(ilias: Arc<ILIAS>, mut path: PathBuf, obj: Object) -> Result<()> {
 	let relative_path = path.strip_prefix(&ilias.opt.output).unwrap();
+	if PROGRESS_BAR_ENABLED.load(Ordering::SeqCst) {
+		PROGRESS_BAR.inc(1);
+		PROGRESS_BAR.set_message(&relative_path.display().to_string());
+	}
 	if ilias.ignore.matched(relative_path, obj.is_dir()).is_ignore() {
 		log!(1, "Ignored {}", relative_path.to_string_lossy());
 		return Ok(());
