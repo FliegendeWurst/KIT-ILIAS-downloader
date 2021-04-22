@@ -158,7 +158,7 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 	}
 	if let Some(url) = ilias.opt.sync_url.as_ref() {
 		// TODO: this should be unified with the download logic below
-		let obj = Object::from_url(URL::from_href(url).expect("invalid URL"), "".to_owned(), None).expect("invalid object"); // name can be empty for first element
+		let obj = Object::from_url(URL::from_href(url).context("invalid sync URL")?, "Sync URL".to_owned(), None).context("invalid sync object")?; // name can be empty for first element
 		spawn!(process_gracefully(ilias.clone(), ilias.opt.output.clone(), obj));
 	} else {
 		let desktop = ilias.personal_desktop().await.context("Failed to load personal desktop")?;
@@ -284,7 +284,10 @@ mod selectors {
 	pub static cmd_node_regex: Lazy<Regex> = Lazy::new(|| Regex::new(r#"cmdNode=uf:\w\w"#).unwrap());
 	pub static image_src_regex: Lazy<Regex> = Lazy::new(|| Regex::new(r#"\./data/produktiv/mobs/mm_(\d+)/([^?]+).+"#).unwrap());
 	pub static XOCT_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?m)<script>\s+xoctPaellaPlayer\.init\(([\s\S]+)\)\s+</script>"#).unwrap());
-	pub static il_content_container: Lazy<Selector> = Lazy::new(|| Selector::parse("#ilContentContainer").unwrap());
+	pub static il_content_container: Lazy<Selector> = Lazy::new(|| Selector::parse("#il_center_col").unwrap());
+	pub static item_prop: Lazy<Selector> = Lazy::new(|| Selector::parse("span.il_ItemProperty").unwrap());
+	pub static container_items: Lazy<Selector> = Lazy::new(|| Selector::parse("div.il_ContainerListItem").unwrap());
+	pub static container_item_title: Lazy<Selector> = Lazy::new(|| Selector::parse("a.il_ContainerItemTitle").unwrap());
 }
 use crate::selectors::*;
 
@@ -327,8 +330,8 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 				ilias.get_course_content(&url).await?
 			};
 			if let Some(s) = content.1.as_ref() {
-				let path = ilias.opt.output.join("course.html");
-				write_file_data(&path, &mut s.as_bytes()).await.expect("failed to write course page html");
+				let path = path.join("course.html");
+				write_file_data(&path, &mut s.as_bytes()).await.context("failed to write course page html")?;
 			}
 			for item in content.0 {
 				let item = item?;
@@ -339,6 +342,10 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 		},
 		Folder { url, .. } => {
 			let content = ilias.get_course_content(&url).await?;
+			if let Some(s) = content.1.as_ref() {
+				let path = path.join("folder.html");
+				write_file_data(&path, &mut s.as_bytes()).await.context("failed to write folder page html")?;
+			}
 			for item in content.0 {
 				let item = item?;
 				let path = path.join(file_escape(item.name()));
@@ -464,7 +471,7 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 					.await
 					.context("HEAD request failed")?;
 				if let Some(len) = head.headers().get("content-length") {
-					if meta.unwrap().len() != len.to_str()?.parse::<u64>()? {
+					if meta?.len() != len.to_str()?.parse::<u64>()? {
 						warning!(relative_path.to_string_lossy(), "was updated, consider moving the outdated file");
 					}
 				}
@@ -585,9 +592,18 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 					let author = author
 						.trim()
 						.split('|')
-						.nth(1)
-						.context("author data in unknown format")?
-						.trim();
+						.collect::<Vec<_>>();
+					let author = if author.len() == 2 {
+						author[0] // pseudonymous forum
+					} else if author.len() == 3 {
+						if author[1] != "Pseudonym" {
+							author[1]
+						} else {
+							author[0]
+						}
+					} else {
+						return Err(anyhow!("author data in unknown format"));
+					}.trim();
 					let container = post
 						.select(&post_container)
 						.next()
@@ -965,8 +981,6 @@ impl ILIAS {
 	}
 
 	fn get_items(html: &Html) -> Vec<Result<Object>> {
-		let container_items = Selector::parse("div.il_ContainerListItem").unwrap();
-		let container_item_title = Selector::parse("a.il_ContainerItemTitle").unwrap();
 		html.select(&container_items)
 			.flat_map(|item| {
 				item.select(&container_item_title)
@@ -980,7 +994,17 @@ impl ILIAS {
 	/// Returns subfolders and the main text on the course page.
 	async fn get_course_content(&self, url: &URL) -> Result<(Vec<Result<Object>>, Option<String>)> {
 		let html = self.get_html(&url.url).await?;
-		let main_text = html.select(&il_content_container).next().map(|x| x.inner_html());
+		let main_text = if let Some(el) = html.select(&il_content_container).next() {
+			if !el.children().flat_map(|x| x.value().as_element()).next().map(|x|
+				x.attr("class").unwrap_or_default().contains("ilContainerBlock")).unwrap_or(false) {
+				Some(el.inner_html())
+			} else {
+				// first element is the content overview => no custom text (?)
+				None
+			}
+		} else {
+			None
+		};
 		Ok((ILIAS::get_items(&html), main_text))
 	}
 
@@ -1159,7 +1183,6 @@ impl Object {
 					// download page containing metadata
 					return Ok(Generic { name, url });
 				} else {
-					let item_prop = Selector::parse("span.il_ItemProperty").unwrap();
 					let mut item_props = item.context("can't construct file object without HTML object")?.select(&item_prop);
 					let ext = item_props.next().context("cannot find file extension")?;
 					let version = item_props
