@@ -84,7 +84,7 @@ If you use Linux, you'll have to compile from source to be able to use this opti
 $ KIT-ILIAS-downloader -U uabcd --keyring [...]
 ```
 
-You can also save your username and password in a `.iliaslogin` file:
+You can also save your username and password in a `.iliaslogin` file: (located in the output folder)
 ```
 username
 password
