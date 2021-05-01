@@ -94,3 +94,4 @@ password
 
 - https://github.com/brantsch/kit-ilias-fuse/
 - https://github.com/Garmelon/PFERD/
+- https://github.com/DeOldSax/iliasDownloaderTool
