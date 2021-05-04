@@ -996,7 +996,9 @@ impl ILIAS {
 		let html = self.get_html(&url.url).await?;
 		let main_text = if let Some(el) = html.select(&il_content_container).next() {
 			if !el.children().flat_map(|x| x.value().as_element()).next().map(|x|
-				x.attr("class").unwrap_or_default().contains("ilContainerBlock")).unwrap_or(false) {
+				x.attr("class").unwrap_or_default().contains("ilContainerBlock")).unwrap_or(false)
+				&& el.inner_html().len() > 40 {
+				// ^ minimum length of useful content?
 				Some(el.inner_html())
 			} else {
 				// first element is the content overview => no custom text (?)
