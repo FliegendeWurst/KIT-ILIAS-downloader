@@ -38,14 +38,14 @@ $ KIT-ILIAS-downloader -o ./ILIAS/WS2021-HM1 --sync-url 'https://ilias.studium.k
 
 ```
 $ KIT-ILIAS-downloader --help
-KIT-ILIAS-downloader 0.2.16
+KIT-ILIAS-downloader 0.2.18
 
 USAGE:
     KIT-ILIAS-downloader [FLAGS] [OPTIONS] --output <output>
 
 FLAGS:
         --check-videos    Re-check OpenCast lectures (slow)
-        --content-tree    Use content tree (slow but thorough)
+        --content-tree    Use content tree (experimental)
     -f                    Re-download already present files
     -t, --forum           Download forum content
     -h, --help            Prints help information
@@ -60,6 +60,7 @@ OPTIONS:
     -o, --output <output>        Output directory
     -P, --password <password>    KIT account password
     -p, --proxy <proxy>          Proxy, e.g. socks5h://127.0.0.1:1080
+        --rate <rate>            Requests per minute [default: 8]
         --sync-url <sync-url>    ILIAS page to download
     -U, --username <username>    KIT account username
 ```
