@@ -8,11 +8,11 @@ use futures_util::{stream::TryStreamExt, StreamExt};
 use ignore::gitignore::Gitignore;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use once_cell::sync::{Lazy, OnceCell};
-use reqwest::{Client, Proxy};
+use reqwest::{Client, IntoUrl, Proxy};
 use scraper::{ElementRef, Html, Selector};
 use serde_json::json;
 use structopt::StructOpt;
-use tokio::{fs, sync::Semaphore};
+use tokio::{fs, sync::Semaphore, time};
 use tokio::task::{self, JoinHandle};
 use tokio_util::io::StreamReader;
 use url::Url;
@@ -36,6 +36,11 @@ static PROGRESS_BAR: Lazy<ProgressBar> = Lazy::new(|| ProgressBar::new(0));
 /// Global job queue
 static TASKS: OnceCell<UnboundedSender<JoinHandle<()>>> = OnceCell::new();
 static TASKS_RUNNING: Lazy<Semaphore> = Lazy::new(|| Semaphore::new(0));
+static REQUEST_TICKETS: Lazy<Semaphore> = Lazy::new(|| Semaphore::new(0));
+
+async fn get_request_ticket() {
+	REQUEST_TICKETS.acquire().await.unwrap().forget();
+}
 
 macro_rules! spawn {
 	($e:expr) => {
@@ -95,6 +100,14 @@ macro_rules! error {
 #[tokio::main]
 async fn main() {
 	let opt = Opt::from_args();
+	let rate = opt.rate;
+	task::spawn(async move {
+		let mut interval = time::interval(time::Duration::from_secs_f64(60.0 / rate as f64));
+		loop {
+			interval.tick().await;
+			REQUEST_TICKETS.add_permits(1);
+		}
+	});
 	if let Err(e) = real_main(opt).await {
 		error!(e);
 	}
@@ -465,9 +478,7 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 			let meta = fs::metadata(&path).await;
 			if !ilias.opt.force && meta.is_ok() && ilias.opt.check_videos {
 				let head = ilias
-					.client
 					.head(url)
-					.send()
 					.await
 					.context("HEAD request failed")?;
 				if let Some(len) = head.headers().get("content-length") {
@@ -757,7 +768,7 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 				log!(2, "Skipping download, link exists already");
 				return Ok(());
 			}
-			let head_req_result = ilias.client.head(&url.url).send().await;
+			let head_req_result = ilias.head(&url.url).await;
 			let url = match &head_req_result {
 				Err(e) => e.url().context("HEAD request failed")?.as_str(),
 				Ok(head) => head.url().as_str(),
@@ -790,7 +801,7 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 						continue;
 					}
 
-					let head = ilias.client.head(url.url.as_str()).send().await.context("HEAD request to web link failed");
+					let head = ilias.head(url.url.as_str()).await.context("HEAD request to web link failed");
 					if let Some(err) = head.as_ref().err() {
 						warning!(err);
 						continue;
@@ -839,7 +850,7 @@ struct Opt {
 	#[structopt(short)]
 	force: bool,
 
-	/// Use content tree (slow but thorough)
+	/// Use content tree (experimental)
 	#[structopt(long)]
 	content_tree: bool,
 
@@ -879,6 +890,10 @@ struct Opt {
 	/// ILIAS page to download
 	#[structopt(long)]
 	sync_url: Option<String>,
+
+	/// Requests per minute
+	#[structopt(long, default_value = "8")]
+	rate: usize
 }
 
 struct ILIAS {
@@ -952,12 +967,18 @@ impl ILIAS {
 	}
 
 	async fn download(&self, url: &str) -> Result<reqwest::Response> {
+		get_request_ticket().await;
 		log!(2, "Downloading {}", url);
 		if url.starts_with("http") || url.starts_with("ilias.studium.kit.edu") {
 			Ok(self.client.get(url).send().await?)
 		} else {
 			Ok(self.client.get(&format!("{}{}", ILIAS_URL, url)).send().await?)
 		}
+	}
+
+	async fn head<U: IntoUrl>(&self, url: U) -> Result<reqwest::Response, reqwest::Error> {
+		get_request_ticket().await;
+		self.client.head(url).send().await
 	}
 
 	async fn get_html(&self, url: &str) -> Result<Html> {
