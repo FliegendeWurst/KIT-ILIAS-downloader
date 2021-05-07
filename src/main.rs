@@ -212,6 +212,8 @@ fn ask_user_pass(opt: &Opt) -> Result<(String, String)> {
 	};
 	#[cfg(feature = "keyring-auth")]
 	let (pass, should_store);
+	#[cfg(feature = "keyring-auth")]
+	let keyring = Lazy::new(|| keyring::Keyring::new(env!("CARGO_PKG_NAME"), &user));
 	#[cfg(not(feature = "keyring-auth"))]
 	let pass;
 	cfg_if::cfg_if! { // TODO: deduplicate the logic below
@@ -220,13 +222,16 @@ fn ask_user_pass(opt: &Opt) -> Result<(String, String)> {
 				pass = password.clone();
 				should_store = true;
 			} else if opt.keyring {
-				let keyring = keyring::Keyring::new(env!("CARGO_PKG_NAME"), &user);
-				if let Ok(password) = keyring.get_password() {
-					pass = password;
-					should_store = false;
-				} else {
-					pass = rpassword::read_password_from_tty(Some("Password: ")).context("password prompt")?;
-					should_store = true;
+				match keyring.get_password() {
+					Ok(password) => {
+						pass = password;
+						should_store = false;
+					},
+					Err(e) => {
+						error!(e);
+						pass = rpassword::read_password_from_tty(Some("Password: ")).context("password prompt")?;
+						should_store = true;
+					}
 				}
 			} else {
 				pass = rpassword::read_password_from_tty(Some("Password: ")).context("password prompt")?;
@@ -242,7 +247,6 @@ fn ask_user_pass(opt: &Opt) -> Result<(String, String)> {
 	};
 	#[cfg(feature = "keyring-auth")]
 	if should_store && opt.keyring {
-		let keyring = keyring::Keyring::new(env!("CARGO_PKG_NAME"), &user);
 		keyring.set_password(&pass).map_err(|x| anyhow!(x.to_string()))?;
 	}
 	Ok((user, pass))
