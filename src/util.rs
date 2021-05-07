@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 use anyhow::Context;
 use tokio::fs::File as AsyncFile;
 use tokio::io::{AsyncRead, BufWriter};
