@@ -6,6 +6,10 @@ and this project loosely adheres to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
+## [0.2.19] - 2021-05-11
+### Fixed
+- Status display on Windows (issue [#14])
+
 ## [0.2.18] - 2021-05-07
 ### Added
 - Request rate limiting (default 8 req. / 60 s, option `--rate`, issue [#13])
@@ -99,6 +103,7 @@ and this project loosely adheres to [Semantic Versioning](https://semver.org/spe
 ## [0.1.0] - 2020-04-21
 (undocumented)
 
+[#14]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/14
 [#13]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/13
 [#11]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/pull/11
 [#10]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/10
@@ -114,7 +119,8 @@ and this project loosely adheres to [Semantic Versioning](https://semver.org/spe
 [@Craeckie]: https://github.com/Craeckie
 [@funnym0nk3y]: https://github.com/funnym0nk3y
 [@Ma27]: https://github.com/Ma27
-[Unreleased]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.18...HEAD
+[Unreleased]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.19...HEAD
+[0.2.18]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.18...v0.2.19
 [0.2.18]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.17...v0.2.18
 [0.2.17]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.16...v0.2.17
 [0.2.16]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.15...v0.2.16
