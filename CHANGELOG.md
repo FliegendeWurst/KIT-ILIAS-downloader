@@ -120,7 +120,7 @@ and this project loosely adheres to [Semantic Versioning](https://semver.org/spe
 [@funnym0nk3y]: https://github.com/funnym0nk3y
 [@Ma27]: https://github.com/Ma27
 [Unreleased]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.19...HEAD
-[0.2.18]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.18...v0.2.19
+[0.2.19]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.18...v0.2.19
 [0.2.18]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.17...v0.2.18
 [0.2.17]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.16...v0.2.17
 [0.2.16]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.15...v0.2.16
