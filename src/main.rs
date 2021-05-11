@@ -316,7 +316,7 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 	let relative_path = path.strip_prefix(&ilias.opt.output).unwrap();
 	if PROGRESS_BAR_ENABLED.load(Ordering::SeqCst) {
 		PROGRESS_BAR.inc(1);
-		PROGRESS_BAR.set_message(&relative_path.display().to_string());
+		PROGRESS_BAR.set_message(relative_path.display().to_string());
 	}
 	if ilias.ignore.matched(relative_path, obj.is_dir()).is_ignore() {
 		log!(1, "Ignored {}", relative_path.to_string_lossy());
