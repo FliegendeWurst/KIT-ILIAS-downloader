@@ -416,7 +416,7 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 			query_parameters.push(("cmdMode".into(), "asynch".into()));
 			full_url.query_pairs_mut().clear().extend_pairs(&query_parameters).finish();
 			log!(1, "Loading {}", full_url);
-			let data = ilias.download(&full_url.into_string()).await?;
+			let data = ilias.download(full_url.as_str()).await?;
 			let html = data.text().await?;
 			let html = Html::parse_fragment(&html);
 			for row in html.select(&video_tr) {
@@ -1321,7 +1321,7 @@ impl URL {
 			}
 		}
 		Ok(URL {
-			url: url.into_string(),
+			url: url.into(),
 			baseClass,
 			cmdClass,
 			cmdNode,
