@@ -19,6 +19,7 @@ use tokio::task::{self, JoinHandle};
 use tokio_util::io::StreamReader;
 use url::Url;
 
+use std::error::Error as _;
 use std::future::Future;
 use std::io;
 use std::path::PathBuf;
@@ -156,7 +157,7 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 	};
 	if ilias.opt.content_tree {
 		// need this to get the content tree
-		if let Err(e) = ilias.client.get("https://ilias.studium.kit.edu/ilias.php?baseClass=ilRepositoryGUI&cmd=frameset&set_mode=tree&ref_id=1").send().await {
+		if let Err(e) = ilias.download("ilias.php?baseClass=ilRepositoryGUI&cmd=frameset&set_mode=tree&ref_id=1").await {
 			warning!("could not enable content tree:", e);
 		}
 	}
@@ -167,7 +168,7 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 	PROGRESS_BAR_ENABLED.store(atty::is(atty::Stream::Stdout), Ordering::SeqCst);
 	if PROGRESS_BAR_ENABLED.load(Ordering::SeqCst) {
 		PROGRESS_BAR.set_draw_target(ProgressDrawTarget::stderr_nohz());
-		PROGRESS_BAR.set_style(ProgressStyle::default_bar().template("[{pos}/{len}+] {msg}"));
+		PROGRESS_BAR.set_style(ProgressStyle::default_bar().template("[{pos}/{len}+] {wide_msg}"));
 		PROGRESS_BAR.inc_length(1);
 		PROGRESS_BAR.set_message("initializing..");
 	}
@@ -192,7 +193,7 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 	// channel is empty => all tasks are completed
 	if ilias.opt.content_tree {
 		// restore fast page loading times
-		if let Err(e) = ilias.client.get("https://ilias.studium.kit.edu/ilias.php?baseClass=ilRepositoryGUI&cmd=frameset&set_mode=flat&ref_id=1").send().await {
+		if let Err(e) = ilias.download("ilias.php?baseClass=ilRepositoryGUI&cmd=frameset&set_mode=flat&ref_id=1").await {
 			warning!("could not disable content tree:", e);
 		}
 	}
@@ -911,6 +912,18 @@ struct ILIAS {
 	client: Client,
 }
 
+/// Returns true if the error is caused by:
+/// "http2 error: protocol error: not a result of an error"
+fn error_is_http2(error: &reqwest::Error) -> bool {
+	error.source()
+		.map(|x| x.downcast_ref::<h2::Error>())
+		.flatten()
+		.map(|x| x.reason())
+		.flatten()
+		.map(|x| x == h2::Reason::NO_ERROR)
+		.unwrap_or(false)
+}
+
 impl ILIAS {
 	async fn login(opt: Opt, user: impl Into<String>, pass: impl Into<String>, ignore: Gitignore) -> Result<Self> {
 		let user = user.into();
@@ -975,16 +988,42 @@ impl ILIAS {
 	async fn download(&self, url: &str) -> Result<reqwest::Response> {
 		get_request_ticket().await;
 		log!(2, "Downloading {}", url);
-		if url.starts_with("http") || url.starts_with("ilias.studium.kit.edu") {
-			Ok(self.client.get(url).send().await?)
+		let url = if url.starts_with("http://") || url.starts_with("https://") {
+			url.to_owned()
+		} else if url.starts_with("ilias.studium.kit.edu") {
+			format!("https://{}", url)
 		} else {
-			Ok(self.client.get(&format!("{}{}", ILIAS_URL, url)).send().await?)
+			format!("{}{}", ILIAS_URL, url)
+		};
+		for attempt in 1..10 {
+			let result = self.client.head(url.clone()).send().await;
+			match result {
+				Ok(x) => return Ok(x),
+				Err(e) if attempt <= 3 && error_is_http2(&e) => {
+					warning!("encountered HTTP/2 NO_ERROR, retrying download..");
+					continue
+				},
+				Err(e) => return Err(e.into())
+			}
 		}
+		unreachable!()
 	}
 
 	async fn head<U: IntoUrl>(&self, url: U) -> Result<reqwest::Response, reqwest::Error> {
 		get_request_ticket().await;
-		self.client.head(url).send().await
+		let url = url.into_url()?;
+		for attempt in 1..10 {
+			let result = self.client.head(url.clone()).send().await;
+			match result {
+				Ok(x) => return Ok(x),
+				Err(e) if attempt <= 3 && error_is_http2(&e) => {
+					warning!("encountered HTTP/2 NO_ERROR, retrying download..");
+					continue
+				},
+				Err(e) => return Err(e)
+			}
+		}
+		unreachable!()
 	}
 
 	async fn get_html(&self, url: &str) -> Result<Html> {
