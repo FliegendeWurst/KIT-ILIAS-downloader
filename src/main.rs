@@ -1017,7 +1017,7 @@ impl ILIAS {
 			match result {
 				Ok(x) => return Ok(x),
 				Err(e) if attempt <= 3 && error_is_http2(&e) => {
-					warning!("encountered HTTP/2 NO_ERROR, retrying download..");
+					warning!("encountered HTTP/2 NO_ERROR, retrying HEAD request..");
 					continue
 				},
 				Err(e) => return Err(e)
