@@ -996,7 +996,7 @@ impl ILIAS {
 			format!("{}{}", ILIAS_URL, url)
 		};
 		for attempt in 1..10 {
-			let result = self.client.head(url.clone()).send().await;
+			let result = self.client.get(url.clone()).send().await;
 			match result {
 				Ok(x) => return Ok(x),
 				Err(e) if attempt <= 3 && error_is_http2(&e) => {
