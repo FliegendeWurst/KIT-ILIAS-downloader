@@ -122,8 +122,8 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 	let _ = colored::control::set_virtual_terminal(true);
 
 	// use UNC paths on Windows
-	opt.output = fs::canonicalize(opt.output).await.context("failed to canonicalize output directory")?;
 	create_dir(&opt.output).await.context("failed to create output directory")?;
+	opt.output = fs::canonicalize(opt.output).await.context("failed to canonicalize output directory")?;
 
 	// load .iliasignore file
 	opt.output.push(".iliasignore");
