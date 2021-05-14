@@ -9,12 +9,10 @@ Download content from ILIAS. That includes:
 
 ## Installation
 
-Go to the [releases](../../releases) and get the executable for your operating system (Windows/Linux only).  
-Or compile from source (mandatory if you use a Mac):
+**Windows/Linux users**: go to the [releases](../../releases) and download the executable for your operating system.   
+**macOS users**: [Install Rust](https://www.rust-lang.org/tools/install) and compile from source:
 ```
-$ git clone https://github.com/FliegendeWurst/KIT-ILIAS-downloader
-$ cd KIT-ILIAS-downloader
-$ cargo install --all-features --path .
+$ cargo install --all-features --git 'https://github.com/FliegendeWurst/KIT-ILIAS-downloader'
 ```
 
 ## Usage
@@ -38,7 +36,7 @@ $ KIT-ILIAS-downloader -o ./ILIAS/WS2021-HM1 --sync-url 'https://ilias.studium.k
 
 ```
 $ KIT-ILIAS-downloader --help
-KIT-ILIAS-downloader 0.2.18
+KIT-ILIAS-downloader 0.2.20
 
 USAGE:
     KIT-ILIAS-downloader [FLAGS] [OPTIONS] --output <output>
