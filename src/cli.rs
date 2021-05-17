@@ -2,7 +2,10 @@
 
 use std::{path::PathBuf, sync::atomic::{AtomicBool, AtomicUsize}};
 
-use anyhow::{anyhow, Context, Result};
+#[cfg(feature = "keyring-auth")]
+use anyhow::anyhow;
+use anyhow::{Context, Result};
+#[cfg(feature = "keyring-auth")]
 use colored::Colorize as _;
 use indicatif::ProgressBar;
 use once_cell::sync::Lazy;
@@ -92,37 +95,37 @@ macro_rules! log {
 
 macro_rules! info {
 	($t:tt) => {
-		println!($t);
+		log!(0, $t);
 	};
 }
 
 macro_rules! success {
 	($t:tt) => {
-		println!("{}", format!($t).bright_green());
+		log!(0, "{}", format!($t).bright_green());
 	};
 }
 
 macro_rules! warning {
 	($e:expr) => {
-		println!("Warning: {}", format!("{:?}", $e).bright_yellow());
+		log!(0, "Warning: {}", format!("{:?}", $e).bright_yellow());
 	};
 	($msg:expr, $e:expr) => {
-		println!("Warning: {}", format!("{} {:?}", $msg, $e).bright_yellow());
+		log!(0, "Warning: {}", format!("{} {:?}", $msg, $e).bright_yellow());
 	};
 	($msg1:expr, $msg2:expr, $e:expr) => {
-		println!("Warning: {}", format!("{} {} {:?}", $msg1, $msg2, $e).bright_yellow());
+		log!(0, "Warning: {}", format!("{} {} {:?}", $msg1, $msg2, $e).bright_yellow());
 	};
 	(format => $($e:expr),+) => {
-		println!("Warning: {}", format!($($e),+).bright_yellow());
+		log!(0, "Warning: {}", format!($($e),+).bright_yellow());
 	};
 }
 
 macro_rules! error {
 	($($prefix:expr),+; $e:expr) => {
-		println!("{}: {}", format!($($prefix),+), format!("{:?}", $e).bright_red());
+		log!(0, "{}: {}", format!($($prefix),+), format!("{:?}", $e).bright_red());
 	};
 	($e:expr) => {
-		println!("Error: {}", format!("{:?}", $e).bright_red());
+		log!(0, "Error: {}", format!("{:?}", $e).bright_red());
 	};
 }
 
