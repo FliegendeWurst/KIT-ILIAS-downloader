@@ -5,10 +5,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project loosely adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- Automatic output directory creation
+- HTTP/2 [`NO_ERROR`](https://docs.rs/h2/0.3.3/h2/struct.Reason.html#associatedconstant.NO_ERROR) handling (issue [#15])
+- Correct logging output when the progress bar is displayed
 
 ## [0.2.20] - 2021-05-13
 ### Fixed
-- HTTP/2 [`NO_ERROR`](https://docs.rs/h2/0.3.3/h2/struct.Reason.html#associatedconstant.NO_ERROR) handling (issue [#15])
 - Status display no longer prints every path when running in a small terminal
 
 ## [0.2.19] - 2021-05-11
