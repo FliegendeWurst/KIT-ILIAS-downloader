@@ -24,6 +24,8 @@ pub struct ILIAS {
 /// "http2 error: protocol error: not a result of an error"
 fn error_is_http2(error: &reqwest::Error) -> bool {
 	error.source() // hyper::Error
+		.map(|x| x.source()) // -> h2::Error
+		.flatten()
 		.map(|x| x.downcast_ref::<h2::Error>())
 		.flatten()
 		.map(|x| x.reason())
