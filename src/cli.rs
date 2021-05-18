@@ -118,6 +118,9 @@ macro_rules! warning {
 	(format => $($e:expr),+) => {
 		log!(0, "Warning: {}", format!($($e),+).bright_yellow());
 	};
+	($lvl:expr; $($e:expr),+) => {
+		log!($lvl, "Warning: {}", format!($($e),+).bright_yellow());
+	}
 }
 
 macro_rules! error {
