@@ -19,7 +19,7 @@ $ cargo install --all-features --git 'https://github.com/FliegendeWurst/KIT-ILIA
 
 First, open a terminal. Navigate to the directory that contains the downloaded binary.
 
-Use `-o <directory>` to specify the download directory:
+Then execute the program (use `-o <directory>` to specify the download directory):
 
 ```
 $ KIT-ILIAS-downloader -o ./ILIAS
@@ -36,7 +36,7 @@ $ KIT-ILIAS-downloader -o ./ILIAS/WS2021-HM1 --sync-url 'https://ilias.studium.k
 
 ```
 $ KIT-ILIAS-downloader --help
-KIT-ILIAS-downloader 0.2.20
+KIT-ILIAS-downloader 0.2.21
 
 USAGE:
     KIT-ILIAS-downloader [FLAGS] [OPTIONS] --output <output>
@@ -65,7 +65,7 @@ OPTIONS:
 
 ### .iliasignore
 
-.gitignore syntax can be used in a `.iliasignore` file: (located in the download folder)
+.gitignore syntax can be used in a `.iliasignore` file: (located in the output folder)
 ```ignore
 # example 1: only download a single course
 /*/
