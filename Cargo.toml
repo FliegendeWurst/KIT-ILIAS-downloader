@@ -2,7 +2,7 @@
 name = "KIT-ILIAS-downloader"
 version = "0.2.21"
 authors = ["FliegendeWurst <2012gdwu@posteo.de>"]
-license = "GPL-2.0-or-later"
+license = "GPL-3.0-or-later"
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
