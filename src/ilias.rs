@@ -167,12 +167,15 @@ impl ILIAS {
 			.collect()
 	}
 
-	/// Returns subfolders and the main text on the course page.
+	/// Returns subfolders and the main text in a course/folder/personal desktop.
 	pub async fn get_course_content(&self, url: &URL) -> Result<(Vec<Result<Object>>, Option<String>)> {
 		let html = self.get_html(&url.url).await?;
+
 		let main_text = if let Some(el) = html.select(&il_content_container).next() {
-			if !el.children().flat_map(|x| x.value().as_element()).next().map(|x|
-				x.attr("class").unwrap_or_default().contains("ilContainerBlock")).unwrap_or(false)
+
+			if !el.children().flat_map(|x| x.value().as_element()).next()
+				.map(|x| x.attr("class").unwrap_or_default()
+					.contains("ilContainerBlock")).unwrap_or(false)
 				&& el.inner_html().len() > 40 {
 				// ^ minimum length of useful content?
 				Some(el.inner_html())
@@ -184,15 +187,6 @@ impl ILIAS {
 			None
 		};
 		Ok((ILIAS::get_items(&html), main_text))
-	}
-
-	pub async fn personal_desktop(&self) -> Result<Dashboard> {
-		let html = self.get_html("https://ilias.studium.kit.edu/ilias.php?baseClass=ilPersonalDesktopGUI&cmd=jumpToSelectedItems").await?;
-		let items = ILIAS::get_items(&html)
-			.into_iter()
-			.flat_map(Result::ok)
-			.collect();
-		Ok(Dashboard { items })
 	}
 
 	pub async fn get_course_content_tree(&self, ref_id: &str, cmd_node: &str) -> Result<Vec<Object>> {
@@ -214,14 +208,10 @@ impl ILIAS {
 }
 
 #[derive(Debug)]
-pub struct Dashboard {
-	pub items: Vec<Object>,
-}
-
-#[derive(Debug)]
 pub enum Object {
 	Course { name: String, url: URL },
 	Folder { name: String, url: URL },
+	PersonalDesktop { url: URL },
 	File { name: String, url: URL },
 	Forum { name: String, url: URL },
 	Thread { url: URL },
@@ -253,6 +243,7 @@ impl Object {
 			| Generic { name, .. } => &name,
 			Thread { url } => &url.thr_pk.as_ref().unwrap(),
 			Video { url } => &url.url,
+			PersonalDesktop { url } => url.cmd.as_ref().unwrap()
 		}
 	}
 
@@ -260,6 +251,7 @@ impl Object {
 		match self {
 			Course { url, .. }
 			| Folder { url, .. }
+			| PersonalDesktop { url }
 			| File { url, .. }
 			| Forum { url, .. }
 			| Thread { url }
@@ -278,6 +270,7 @@ impl Object {
 		match self {
 			Course { .. } => "course",
 			Folder { .. } => "folder",
+			PersonalDesktop { .. } => "personal desktop",
 			File { .. } => "file",
 			Forum { .. } => "forum",
 			Thread { .. } => "thread",
@@ -293,16 +286,16 @@ impl Object {
 	}
 
 	pub fn is_dir(&self) -> bool {
-		match self {
+		matches!(self,
 			Course { .. }
 			| Folder { .. }
+			| PersonalDesktop { .. }
 			| Forum { .. }
 			| Thread { .. }
 			| Wiki { .. }
 			| ExerciseHandler { .. }
-			| PluginDispatch { .. } => true,
-			_ => false,
-		}
+			| PluginDispatch { .. }
+		)
 	}
 
 	pub fn from_link(item: ElementRef, link: ElementRef) -> Result<Self> {
@@ -399,6 +392,7 @@ impl Object {
 				None => Course { name, url },
 			},
 			"ilobjplugindispatchgui" => PluginDispatch { name, url },
+			"ilpersonaldesktopgui" => PersonalDesktop { url },
 			_ => Generic { name, url },
 		})
 	}

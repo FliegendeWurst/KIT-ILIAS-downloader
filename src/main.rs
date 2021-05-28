@@ -120,23 +120,19 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 	if PROGRESS_BAR_ENABLED.load(Ordering::SeqCst) {
 		PROGRESS_BAR.set_draw_target(ProgressDrawTarget::stderr_nohz());
 		PROGRESS_BAR.set_style(ProgressStyle::default_bar().template("[{pos}/{len}+] {wide_msg}"));
-		PROGRESS_BAR.inc_length(1);
 		PROGRESS_BAR.set_message("initializing..");
 	}
-	if let Some(url) = ilias.opt.sync_url.as_ref() {
-		// TODO: this should be unified with the download logic below
-		let obj = Object::from_url(URL::from_href(url).context("invalid sync URL")?, "Sync URL".to_owned(), None).context("invalid sync object")?; // name can be empty for first element
-		spawn!(process_gracefully(ilias.clone(), ilias.opt.output.clone(), obj));
-	} else {
-		let desktop = ilias.personal_desktop().await.context("Failed to load personal desktop")?;
-		for item in desktop.items {
-			let path = ilias.opt.output.join(file_escape(item.name()));
-			tx.unbounded_send(task::spawn(process_gracefully(ilias.clone(), path, item))).unwrap();
-		}
-	}
+
+	// default sync URL: main personal desktop
+	let sync_url = ilias.opt.sync_url.clone().unwrap_or_else(|| format!("{}ilias.php?baseClass=ilPersonalDesktopGUI&cmd=jumpToSelectedItems", ILIAS_URL));
+	let obj = Object::from_url(URL::from_href(&sync_url).context("invalid sync URL")?, String::new(), None).context("invalid sync object")?; // name can be empty for first element
+	spawn!(process_gracefully(ilias.clone(), ilias.opt.output.clone(), obj));
+
 	while let Either::Left((task, _)) = future::select(rx.next(), future::ready(())).await {
 		if let Some(task) = task {
-			let _ = task.await;
+			if let Err(e) = task.await {
+				error!(e)
+			}
 		} else {
 			break;
 		}
@@ -149,7 +145,6 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 		}
 	}
 	if PROGRESS_BAR_ENABLED.load(Ordering::SeqCst) {
-		PROGRESS_BAR.inc(1);
 		PROGRESS_BAR.set_style(ProgressStyle::default_bar().template("[{pos}/{len}] {wide_msg}"));
 		PROGRESS_BAR.finish_with_message("done");
 	}
@@ -220,9 +215,13 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 	let relative_path = path.strip_prefix(&ilias.opt.output).unwrap();
 	if PROGRESS_BAR_ENABLED.load(Ordering::SeqCst) {
 		PROGRESS_BAR.inc(1);
-		PROGRESS_BAR.set_message(relative_path.display().to_string());
+		let path = relative_path.display().to_string();
+		if !path.is_empty() {
+			PROGRESS_BAR.set_message(path);
+		}
 	}
-	if ilias.ignore.matched(relative_path, obj.is_dir()).is_ignore() {
+	// root path should not be matched
+	if relative_path.parent().is_some() && ilias.ignore.matched(relative_path, obj.is_dir()).is_ignore() {
 		log!(1, "Ignored {}", relative_path.to_string_lossy());
 		return Ok(());
 	}
@@ -263,7 +262,7 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 				spawn!(process_gracefully(ilias, path, item));
 			}
 		},
-		Folder { url, .. } => {
+		Folder { url, .. } | PersonalDesktop { url } => {
 			let content = ilias.get_course_content(&url).await?;
 			if let Some(s) = content.1.as_ref() {
 				let path = path.join("folder.html");
