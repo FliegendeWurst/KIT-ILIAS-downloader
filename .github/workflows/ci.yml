@@ -46,9 +46,6 @@ jobs:
       if: runner.os == 'Linux'
     - name: Build
       run: cargo build --release ${{ matrix.features }} --verbose
-    # there are currently no automated tests
-    - name: Run tests
-      run: cargo test --release ${{ matrix.features }} --verbose
     - name: Archive artifacts
       uses: actions/upload-artifact@v2
       if: matrix.features == '--all-features'
