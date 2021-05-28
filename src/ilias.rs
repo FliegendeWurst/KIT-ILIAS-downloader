@@ -9,7 +9,7 @@ use reqwest::{Client, IntoUrl, Proxy, Url};
 use scraper::{ElementRef, Html, Selector};
 use serde_json::json;
 
-use crate::{ILIAS_URL, cli::Opt, get_request_ticket, selectors::*};
+use crate::{cli::Opt, get_request_ticket, selectors::*, ILIAS_URL};
 
 pub struct ILIAS {
 	pub opt: Opt,
@@ -23,8 +23,9 @@ pub struct ILIAS {
 /// Returns true if the error is caused by:
 /// "http2 error: protocol error: not a result of an error"
 fn error_is_http2(error: &reqwest::Error) -> bool {
-	error.source() // hyper::Error
-		.map(|x| x.source()) // -> h2::Error
+	error
+		.source() // hyper::Error
+		.map(|x| x.source()) // h2::Error
 		.flatten()
 		.map(|x| x.downcast_ref::<h2::Error>())
 		.flatten()
@@ -48,9 +49,16 @@ impl ILIAS {
 		let client = builder
 			// timeout is infinite by default
 			.build()?;
-		let this = ILIAS { opt, ignore, user, pass, client };
+		let this = ILIAS {
+			opt,
+			ignore,
+			user,
+			pass,
+			client,
+		};
 		info!("Logging into ILIAS using KIT account..");
-		let session_establishment = this.client
+		let session_establishment = this
+			.client
 			.post("https://ilias.studium.kit.edu/Shibboleth.sso/Login")
 			.form(&json!({
 				"sendLogin": "1",
@@ -58,29 +66,33 @@ impl ILIAS {
 				"target": "/shib_login.php?target=",
 				"home_organization_selection": "Mit KIT-Account anmelden"
 			}))
-			.send().await?;
+			.send()
+			.await?;
 		let url = session_establishment.url().clone();
 		let text = session_establishment.text().await?;
 		let dom_sso = Html::parse_document(text.as_str());
 		let csrf_token = dom_sso
 			.select(&Selector::parse(r#"input[name="csrf_token"]"#).unwrap())
-			.next().context("no csrf token")?;
+			.next()
+			.context("no CSRF token found")?
+			.value().attr("value").context("no CSRF token value")?;
 		info!("Logging into Shibboleth..");
-		let login_response = this.client
+		let login_response = this
+			.client
 			.post(url)
 			.form(&json!({
 				"j_username": &this.user,
 				"j_password": &this.pass,
 				"_eventId_proceed": "",
-				"csrf_token": csrf_token.value().attr("value").context("no csrf token")?,
+				"csrf_token": csrf_token,
 			}))
-			.send().await?
-			.text().await?;
+			.send()
+			.await?
+			.text()
+			.await?;
 		let dom = Html::parse_document(&login_response);
 		let saml = Selector::parse(r#"input[name="SAMLResponse"]"#).unwrap();
-		let saml = dom
-			.select(&saml)
-			.next().context("no SAML response, incorrect password?")?;
+		let saml = dom.select(&saml).next().context("no SAML response, incorrect password?")?;
 		let relay_state = Selector::parse(r#"input[name="RelayState"]"#).unwrap();
 		let relay_state = dom.select(&relay_state).next().context("no relay state")?;
 		info!("Logging into ILIAS..");
@@ -90,7 +102,8 @@ impl ILIAS {
 				"SAMLResponse": saml.value().attr("value").context("no SAML value")?,
 				"RelayState": relay_state.value().attr("value").context("no RelayState value")?
 			}))
-			.send().await?;
+			.send()
+			.await?;
 		success!("Logged in!");
 		Ok(this)
 	}
@@ -111,9 +124,9 @@ impl ILIAS {
 				Ok(x) => return Ok(x),
 				Err(e) if attempt <= 3 && error_is_http2(&e) => {
 					warning!(1; "encountered HTTP/2 NO_ERROR, retrying download..");
-					continue
+					continue;
 				},
-				Err(e) => return Err(e.into())
+				Err(e) => return Err(e.into()),
 			}
 		}
 		unreachable!()
@@ -128,9 +141,9 @@ impl ILIAS {
 				Ok(x) => return Ok(x),
 				Err(e) if attempt <= 3 && error_is_http2(&e) => {
 					warning!(1; "encountered HTTP/2 NO_ERROR, retrying HEAD request..");
-					continue
+					continue;
 				},
-				Err(e) => return Err(e)
+				Err(e) => return Err(e),
 			}
 		}
 		unreachable!()
@@ -159,10 +172,8 @@ impl ILIAS {
 	pub fn get_items(html: &Html) -> Vec<Result<Object>> {
 		html.select(&container_items)
 			.flat_map(|item| {
-				item.select(&container_item_title)
-					.next()
-					.map(|link| Object::from_link(item, link))
-					// items without links are ignored
+				item.select(&container_item_title).next().map(|link| Object::from_link(item, link))
+				// items without links are ignored
 			})
 			.collect()
 	}
@@ -172,11 +183,14 @@ impl ILIAS {
 		let html = self.get_html(&url.url).await?;
 
 		let main_text = if let Some(el) = html.select(&il_content_container).next() {
-
-			if !el.children().flat_map(|x| x.value().as_element()).next()
-				.map(|x| x.attr("class").unwrap_or_default()
-					.contains("ilContainerBlock")).unwrap_or(false)
-				&& el.inner_html().len() > 40 {
+			if !el
+				.children()
+				.flat_map(|x| x.value().as_element())
+				.next()
+				.map(|x| x.attr("class").unwrap_or_default().contains("ilContainerBlock"))
+				.unwrap_or(false)
+				&& el.inner_html().len() > 40
+			{
 				// ^ minimum length of useful content?
 				Some(el.inner_html())
 			} else {
@@ -198,7 +212,7 @@ impl ILIAS {
 		);
 		let html = self.get_html_fragment(&url).await?;
 		let mut items = Vec::new();
-		for link in html.select(&a) {
+		for link in html.select(&LINKS) {
 			if link.value().attr("href").is_some() {
 				items.push(Object::from_link(link, link)?);
 			} // else: disabled course
@@ -243,7 +257,7 @@ impl Object {
 			| Generic { name, .. } => &name,
 			Thread { url } => &url.thr_pk.as_ref().unwrap(),
 			Video { url } => &url.url,
-			PersonalDesktop { url } => url.cmd.as_ref().unwrap()
+			PersonalDesktop { .. } => panic!("name of personal desktop requested (this should never happen)"),
 		}
 	}
 
@@ -286,25 +300,18 @@ impl Object {
 	}
 
 	pub fn is_dir(&self) -> bool {
-		matches!(self,
+		matches!(
+			self,
 			Course { .. }
-			| Folder { .. }
-			| PersonalDesktop { .. }
-			| Forum { .. }
-			| Thread { .. }
-			| Wiki { .. }
-			| ExerciseHandler { .. }
-			| PluginDispatch { .. }
+				| Folder { .. } | PersonalDesktop { .. }
+				| Forum { .. } | Thread { .. }
+				| Wiki { .. } | ExerciseHandler { .. }
+				| PluginDispatch { .. }
 		)
 	}
 
 	pub fn from_link(item: ElementRef, link: ElementRef) -> Result<Self> {
-		let name = link
-			.text()
-			.collect::<String>()
-			.replace('/', "-")
-			.trim()
-			.to_owned();
+		let name = link.text().collect::<String>().replace('/', "-").trim().to_owned();
 		let url = URL::from_href(link.value().attr("href").context("link missing href")?)?;
 		Object::from_url(url, name, Some(item))
 	}
@@ -314,10 +321,7 @@ impl Object {
 			return Ok(Thread { url });
 		}
 
-		if url
-			.url
-			.starts_with("https://ilias.studium.kit.edu/goto.php")
-		{
+		if url.url.starts_with("https://ilias.studium.kit.edu/goto.php") {
 			let target = url.target.as_deref().unwrap_or("NONE");
 			if target.starts_with("wiki_") {
 				return Ok(Wiki {
@@ -356,11 +360,7 @@ impl Object {
 				} else {
 					let mut item_props = item.context("can't construct file object without HTML object")?.select(&item_prop);
 					let ext = item_props.next().context("cannot find file extension")?;
-					let version = item_props
-						.nth(1)
-						.context("cannot find 3rd file metadata")?
-						.text()
-						.collect::<String>();
+					let version = item_props.nth(1).context("cannot find 3rd file metadata")?.text().collect::<String>();
 					let version = version.trim();
 					if let Some(v) = version.strip_prefix("Version: ") {
 						name += "_v";

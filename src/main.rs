@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#![allow(clippy::comparison_to_empty, clippy::upper_case_acronyms)]
+#![allow(clippy::upper_case_acronyms)]
 
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
@@ -13,17 +13,17 @@ use indicatif::{ProgressDrawTarget, ProgressStyle};
 use once_cell::sync::{Lazy, OnceCell};
 use scraper::Html;
 use structopt::StructOpt;
-use tokio::{fs, sync::Semaphore, time};
 use tokio::task::{self, JoinHandle};
+use tokio::{fs, sync::Semaphore, time};
 use tokio_util::io::StreamReader;
 use url::Url;
 
+use std::collections::HashSet;
 use std::future::Future;
 use std::io;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::collections::HashSet;
 
 pub const ILIAS_URL: &str = "https://ilias.studium.kit.edu/";
 
@@ -72,8 +72,8 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 	#[cfg(windows)]
 	let _ = colored::control::set_virtual_terminal(true);
 
-	// use UNC paths on Windows
 	create_dir(&opt.output).await.context("failed to create output directory")?;
+	// use UNC paths on Windows (#6)
 	opt.output = fs::canonicalize(opt.output).await.context("failed to canonicalize output directory")?;
 
 	// load .iliasignore file
@@ -107,8 +107,10 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 		},
 	};
 	if ilias.opt.content_tree {
-		// need this to get the content tree
-		if let Err(e) = ilias.download("ilias.php?baseClass=ilRepositoryGUI&cmd=frameset&set_mode=tree&ref_id=1").await {
+		if let Err(e) = ilias
+			.download("ilias.php?baseClass=ilRepositoryGUI&cmd=frameset&set_mode=tree&ref_id=1")
+			.await
+		{
 			warning!("could not enable content tree:", e);
 		}
 	}
@@ -123,8 +125,10 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 		PROGRESS_BAR.set_message("initializing..");
 	}
 
-	// default sync URL: main personal desktop
-	let sync_url = ilias.opt.sync_url.clone().unwrap_or_else(|| format!("{}ilias.php?baseClass=ilPersonalDesktopGUI&cmd=jumpToSelectedItems", ILIAS_URL));
+	let sync_url = ilias.opt.sync_url.clone().unwrap_or_else(|| {
+		// default sync URL: main personal desktop
+		format!("{}ilias.php?baseClass=ilPersonalDesktopGUI&cmd=jumpToSelectedItems", ILIAS_URL)
+	});
 	let obj = Object::from_url(URL::from_href(&sync_url).context("invalid sync URL")?, String::new(), None).context("invalid sync object")?; // name can be empty for first element
 	spawn!(process_gracefully(ilias.clone(), ilias.opt.output.clone(), obj));
 
@@ -134,13 +138,14 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 				error!(e)
 			}
 		} else {
-			break;
+			break; // channel is empty => all tasks are completed
 		}
 	}
-	// channel is empty => all tasks are completed
 	if ilias.opt.content_tree {
-		// restore fast page loading times
-		if let Err(e) = ilias.download("ilias.php?baseClass=ilRepositoryGUI&cmd=frameset&set_mode=flat&ref_id=1").await {
+		if let Err(e) = ilias
+			.download("ilias.php?baseClass=ilRepositoryGUI&cmd=frameset&set_mode=flat&ref_id=1")
+			.await
+		{
 			warning!("could not disable content tree:", e);
 		}
 	}
@@ -153,21 +158,19 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 
 // https://github.com/rust-lang/rust/issues/53690#issuecomment-418911229
 #[allow(clippy::manual_async_fn)]
-fn process_gracefully(
-	ilias: Arc<ILIAS>,
-	path: PathBuf,
-	obj: Object,
-) -> impl Future<Output = ()> + Send { async move {
-	if PROGRESS_BAR_ENABLED.load(Ordering::SeqCst) {
-		PROGRESS_BAR.inc_length(1);
+fn process_gracefully(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl Future<Output = ()> + Send {
+	async move {
+		if PROGRESS_BAR_ENABLED.load(Ordering::SeqCst) {
+			PROGRESS_BAR.inc_length(1);
+		}
+		let permit = TASKS_RUNNING.acquire().await.unwrap();
+		let path_text = path.to_string_lossy().into_owned();
+		if let Err(e) = process(ilias, path, obj).await.context("failed to process URL") {
+			error!("Syncing {}", path_text; e);
+		}
+		drop(permit);
 	}
-	let permit = TASKS_RUNNING.acquire().await.unwrap();
-	let path_text = path.to_string_lossy().into_owned();
-	if let Err(e) = process(ilias, path, obj).await.context("failed to process URL") {
-		error!("Syncing {}", path_text; e);
-	}
-	drop(permit);
-}}
+}
 
 async fn handle_gracefully(fut: impl Future<Output = Result<()>>) {
 	if let Err(e) = fut.await {
@@ -181,11 +184,11 @@ mod selectors {
 	use regex::Regex;
 	use scraper::Selector;
 	// construct CSS selectors once
-	pub static a: Lazy<Selector> = Lazy::new(|| Selector::parse("a").unwrap());
+	pub static LINKS: Lazy<Selector> = Lazy::new(|| Selector::parse("a").unwrap());
 	pub static a_target_blank: Lazy<Selector> = Lazy::new(|| Selector::parse(r#"a[target="_blank"]"#).unwrap());
-	pub static img: Lazy<Selector> = Lazy::new(|| Selector::parse("img").unwrap());
-	pub static table: Lazy<Selector> = Lazy::new(|| Selector::parse("table").unwrap());
-	pub static video_tr: Lazy<Selector> = Lazy::new(|| Selector::parse(".ilTableOuter > div > table > tbody > tr").unwrap());
+	pub static IMAGES: Lazy<Selector> = Lazy::new(|| Selector::parse("img").unwrap());
+	pub static TABLES: Lazy<Selector> = Lazy::new(|| Selector::parse("table").unwrap());
+	pub static VIDEO_ROWS: Lazy<Selector> = Lazy::new(|| Selector::parse(".ilTableOuter > div > table > tbody > tr").unwrap());
 	pub static links_in_table: Lazy<Selector> = Lazy::new(|| Selector::parse("tbody tr td a").unwrap());
 	pub static th: Lazy<Selector> = Lazy::new(|| Selector::parse("th").unwrap());
 	pub static td: Lazy<Selector> = Lazy::new(|| Selector::parse("td").unwrap());
@@ -253,7 +256,9 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 			};
 			if let Some(s) = content.1.as_ref() {
 				let path = path.join("course.html");
-				write_file_data(&path, &mut s.as_bytes()).await.context("failed to write course page html")?;
+				write_file_data(&path, &mut s.as_bytes())
+					.await
+					.context("failed to write course page html")?;
 			}
 			for item in content.0 {
 				let item = item?;
@@ -266,7 +271,9 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 			let content = ilias.get_course_content(&url).await?;
 			if let Some(s) = content.1.as_ref() {
 				let path = path.join("folder.html");
-				write_file_data(&path, &mut s.as_bytes()).await.context("failed to write folder page html")?;
+				write_file_data(&path, &mut s.as_bytes())
+					.await
+					.context("failed to write folder page html")?;
 			}
 			for item in content.0 {
 				let item = item?;
@@ -284,9 +291,7 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 				return Ok(());
 			}
 			let data = ilias.download(&url.url).await?;
-			let mut reader = StreamReader::new(data.bytes_stream().map_err(|x| {
-				io::Error::new(io::ErrorKind::Other, x)
-			}));
+			let mut reader = StreamReader::new(data.bytes_stream().map_err(|x| io::Error::new(io::ErrorKind::Other, x)));
 			log!(0, "Writing {}", relative_path.to_string_lossy());
 			write_file_data(&path, &mut reader).await?;
 		},
@@ -301,10 +306,12 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 				let data = ilias.download(&list_url).await?;
 				let html = data.text().await?;
 				let html = Html::parse_fragment(&html);
-				html.select(&a)
+				html.select(&LINKS)
 					.filter_map(|link| link.value().attr("href"))
 					.filter(|href| href.contains("trows=800"))
-					.map(|x| x.to_string()).next().context("video list link not found")?
+					.map(|x| x.to_string())
+					.next()
+					.context("video list link not found")?
 			};
 			log!(1, "Rewriting {}", full_url);
 			let mut full_url = Url::parse(&format!("{}{}", ILIAS_URL, full_url))?;
@@ -322,7 +329,7 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 			let data = ilias.download(full_url.as_str()).await?;
 			let html = data.text().await?;
 			let html = Html::parse_fragment(&html);
-			for row in html.select(&video_tr) {
+			for row in html.select(&VIDEO_ROWS) {
 				let link = row.select(&a_target_blank).next();
 				if link.is_none() {
 					if !row.text().any(|x| x == NO_ENTRIES) {
@@ -342,17 +349,10 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 					path.push(format!("{}.mp4", file_escape(title)));
 					log!(1, "Found video: {}", title);
 					let video = Video {
-						url: URL::raw(
-							link.value()
-								.attr("href")
-								.context("video link without href")?
-								.to_owned(),
-						),
+						url: URL::raw(link.value().attr("href").context("video link without href")?.to_owned()),
 					};
 					let ilias = Arc::clone(&ilias);
-					spawn!(async {
-						process_gracefully(ilias, path, video).await;
-					});
+					spawn!(process_gracefully(ilias, path, video));
 				}
 			}
 		},
@@ -372,10 +372,7 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 				let mut json_capture = XOCT_REGEX.captures_iter(&html);
 				let json = &json_capture.next().context("xoct player json not found")?[1];
 				log!(2, "{}", json);
-				let json = json
-					.split(",\n")
-					.next()
-					.context("invalid xoct player json")?;
+				let json = json.split(",\n").next().context("invalid xoct player json")?;
 				serde_json::from_str(&json.trim())?
 			};
 			log!(2, "{}", json);
@@ -386,10 +383,7 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 				.context("video src not string")?;
 			let meta = fs::metadata(&path).await;
 			if !ilias.opt.force && meta.is_ok() && ilias.opt.check_videos {
-				let head = ilias
-					.head(url)
-					.await
-					.context("HEAD request failed")?;
+				let head = ilias.head(url).await.context("HEAD request failed")?;
 				if let Some(len) = head.headers().get("content-length") {
 					if meta?.len() != len.to_str()?.parse::<u64>()? {
 						warning!(relative_path.to_string_lossy(), "was updated, consider moving the outdated file");
@@ -397,10 +391,7 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 				}
 			} else {
 				let resp = ilias.download(&url).await?;
-				let mut reader = StreamReader::new(
-				resp.bytes_stream()
-						.map_err(|x| io::Error::new(io::ErrorKind::Other, x)),
-				);
+				let mut reader = StreamReader::new(resp.bytes_stream().map_err(|x| io::Error::new(io::ErrorKind::Other, x)));
 				log!(0, "Writing {}", relative_path.to_string_lossy());
 				write_file_data(&path, &mut reader).await?;
 			}
@@ -415,9 +406,7 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 				let html_text = data.await?.text().await?;
 				let url = {
 					let html = Html::parse_document(&html_text);
-					let thread_count_selector = html.select(&a)
-						.flat_map(|x| x.value().attr("href"))
-						.find(|x| x.contains("trows=800"));
+					let thread_count_selector = html.select(&LINKS).flat_map(|x| x.value().attr("href")).find(|x| x.contains("trows=800"));
 					if thread_count_selector.is_none() {
 						if let Some(cell) = html.select(&td).next() {
 							if cell.text().any(|x| x == NO_ENTRIES) {
@@ -448,19 +437,12 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 					);
 					continue;
 				}
-				let link = cells[1]
-					.select(&a)
-					.next()
-					.context("thread link not found")?;
+				let link = cells[1].select(&LINKS).next().context("thread link not found")?;
 				let object = Object::from_link(link, link)?;
 				let mut path = path.clone();
 				let name = format!(
 					"{}_{}",
-					object
-						.url()
-						.thr_pk
-						.as_ref()
-						.context("thr_pk not found for thread")?,
+					object.url().thr_pk.as_ref().context("thr_pk not found for thread")?,
 					link.text().collect::<String>().trim()
 				);
 				path.push(file_escape(&name));
@@ -504,15 +486,9 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 						.context("post title not found")?
 						.text()
 						.collect::<String>();
-					let author = post
-						.select(&span_small)
-						.next()
-						.context("post author not found")?;
+					let author = post.select(&span_small).next().context("post author not found")?;
 					let author = author.text().collect::<String>();
-					let author = author
-						.trim()
-						.split('|')
-						.collect::<Vec<_>>();
+					let author = author.trim().split('|').collect::<Vec<_>>();
 					let author = if author.len() == 2 {
 						author[0] // pseudonymous forum
 					} else if author.len() == 3 {
@@ -523,36 +499,26 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 						}
 					} else {
 						return Err(anyhow!("author data in unknown format"));
-					}.trim();
-					let container = post
-						.select(&post_container)
-						.next()
-						.context("post container not found")?;
-					let link = container.select(&a).next().context("post link not found")?;
-					let id = link
-						.value()
-						.attr("id")
-						.context("no id in thread link")?
-						.to_owned();
+					}
+					.trim();
+					let container = post.select(&post_container).next().context("post container not found")?;
+					let link = container.select(&LINKS).next().context("post link not found")?;
+					let id = link.value().attr("id").context("no id in thread link")?.to_owned();
 					let name = format!("{}_{}_{}.html", id, author, title.trim());
 					let data = container.inner_html();
 					let path = path.join(file_escape(&name));
 					let relative_path = relative_path.join(file_escape(&name));
 					spawn!(handle_gracefully(async move {
 						log!(0, "Writing {}", relative_path.display());
-						write_file_data(&path, &mut data.as_bytes())
-							.await
-							.context("failed to write forum post")
+						write_file_data(&path, &mut data.as_bytes()).await.context("failed to write forum post")
 					}));
-					let images = container
-						.select(&img)
-						.map(|x| x.value().attr("src").map(|x| x.to_owned()));
+					let images = container.select(&IMAGES).map(|x| x.value().attr("src").map(|x| x.to_owned()));
 					for image in images {
 						let image = image.context("no src on image")?;
 						all_images.push((id.clone(), image));
 					}
 					if let Some(container) = container.select(&post_attachments).next() {
-						for attachment in container.select(&a) {
+						for attachment in container.select(&LINKS) {
 							attachments.push((
 								id.clone(),
 								attachment.text().collect::<String>(),
@@ -562,16 +528,14 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 					}
 				}
 				// pagination
-				if let Some(pages) = html.select(&table).next() {
+				if let Some(pages) = html.select(&TABLES).next() {
 					if let Some(last) = pages.select(&links_in_table).last() {
 						let text = last.text().collect::<String>();
 						if text.trim() == ">>" {
 							// not last page yet
 							let ilias = Arc::clone(&ilias);
 							let next_page = Thread {
-								url: URL::from_href(
-									last.value().attr("href").context("page link not found")?,
-								)?,
+								url: URL::from_href(last.value().attr("href").context("page link not found")?)?,
 							};
 							spawn!(process_gracefully(ilias, path.clone(), next_page));
 						}
@@ -622,7 +586,7 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 			let html = ilias.get_html(&url.url).await?;
 			let mut filenames = HashSet::new();
 			for row in html.select(&form_group) {
-				let link = row.select(&a).next();
+				let link = row.select(&LINKS).next();
 				if link.is_none() {
 					continue;
 				}
@@ -634,10 +598,7 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 				let href = href.unwrap();
 				let url = URL::from_href(href)?;
 				let cmd = url.cmd.as_deref().unwrap_or("");
-				if cmd != "downloadFile"
-					&& cmd != "downloadGlobalFeedbackFile"
-					&& cmd != "downloadFeedbackFile"
-				{
+				if cmd != "downloadFile" && cmd != "downloadGlobalFeedbackFile" && cmd != "downloadFeedbackFile" {
 					continue;
 				}
 				// link is definitely just a download link to the exercise or the solution
@@ -660,10 +621,10 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 				let mut i = 1;
 				while filenames.contains(&unique_filename) {
 					i += 1;
-					if name != "" {
-						unique_filename = format!("{}{}.{}", name, i, extension);
-					} else {
+					if name.is_empty() {
 						unique_filename = format!("{}{}", extension, i);
+					} else {
+						unique_filename = format!("{}{}.{}", name, i, extension);
 					}
 				}
 				filenames.insert(unique_filename.clone());
@@ -691,17 +652,9 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 
 				let urls = {
 					let html = ilias.get_html(url).await?;
-					html.select(&a)
-						.filter_map(|x| {
-							x.value()
-								.attr("href")
-								.map(|y| (y, x.text().collect::<String>()))
-						})
-						.map(|(x, y)| {
-							URL::from_href(x)
-								.map(|z| (z, y.trim().to_owned()))
-								.context("parsing weblink")
-						})
+					html.select(&LINKS)
+						.filter_map(|x| x.value().attr("href").map(|y| (y, x.text().collect::<String>())))
+						.map(|(x, y)| URL::from_href(x).map(|z| (z, y.trim().to_owned())).context("parsing weblink"))
 						.collect::<Result<Vec<_>>>()
 				}?;
 

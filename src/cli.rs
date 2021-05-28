@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::{path::PathBuf, sync::atomic::{AtomicBool, AtomicUsize}};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 
 #[cfg(feature = "keyring-auth")]
 use anyhow::anyhow;
@@ -73,7 +74,11 @@ pub struct Opt {
 
 	/// Requests per minute
 	#[structopt(long, default_value = "8")]
-	pub rate: usize
+	pub rate: usize,
+
+	/// Attempt to re-use session cookies
+	#[structopt(long)]
+	pub keep_session: bool,
 }
 
 pub static LOG_LEVEL: AtomicUsize = AtomicUsize::new(0);

@@ -9,8 +9,10 @@ use std::path::Path;
 use crate::Result;
 
 /// Write all data to the specified path. Will overwrite previous file data.
-pub async fn write_file_data<R: ?Sized>(path: impl AsRef<Path>, data: &mut R) -> Result<()> 
-where R: AsyncRead + Unpin {
+pub async fn write_file_data<R: ?Sized>(path: impl AsRef<Path>, data: &mut R) -> Result<()>
+where
+	R: AsyncRead + Unpin,
+{
 	let file = AsyncFile::create(path.as_ref()).await.context("failed to create file")?;
 	let mut file = BufWriter::new(file);
 	tokio::io::copy(data, &mut file).await.context("failed to write to file")?;
