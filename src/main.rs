@@ -27,7 +27,9 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-pub const ILIAS_URL: &str = "https://ilias.studium.kit.edu/";
+static ILIAS_URL: &str = "https://ilias.studium.kit.edu/";
+/// main personal desktop
+static DEFAULT_SYNC_URL: &str = "https://ilias.studium.kit.edu/ilias.php?baseClass=ilPersonalDesktopGUI&cmd=jumpToSelectedItems";
 
 #[macro_use]
 mod cli;
@@ -96,7 +98,15 @@ async fn login(opt: Opt, ignore: Gitignore) -> Result<ILIAS> {
 			.await
 			.context("failed to load previous session")
 		{
-			Ok(ilias) => return Ok(ilias),
+			Ok(ilias) => {
+				info!("checking session validity..");
+				// TODO: this probably isn't the best solution..
+				if let Err(e) = ilias.get_html(DEFAULT_SYNC_URL).await {
+					error!(e)
+				} else {
+					return Ok(ilias)
+				}
+			},
 			Err(e) => warning!(e),
 		}
 	}
@@ -161,11 +171,8 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 		PROGRESS_BAR.set_message("initializing..");
 	}
 
-	let sync_url = ilias.opt.sync_url.clone().unwrap_or_else(|| {
-		// default sync URL: main personal desktop
-		format!("{}ilias.php?baseClass=ilPersonalDesktopGUI&cmd=jumpToSelectedItems", ILIAS_URL)
-	});
-	let obj = Object::from_url(URL::from_href(&sync_url).context("invalid sync URL")?, String::new(), None).context("invalid sync object")?; // name can be empty for first element
+	let sync_url = ilias.opt.sync_url.as_deref().unwrap_or(DEFAULT_SYNC_URL);
+	let obj = Object::from_url(URL::from_href(sync_url).context("invalid sync URL")?, String::new(), None).context("invalid sync object")?; // name can be empty for first element
 	spawn!(process_gracefully(ilias.clone(), ilias.opt.output.clone(), obj));
 
 	while let Either::Left((task, _)) = future::select(rx.next(), future::ready(())).await {
