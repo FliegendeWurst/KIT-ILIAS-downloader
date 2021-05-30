@@ -99,11 +99,12 @@ async fn login(opt: Opt, ignore: Gitignore) -> Result<ILIAS> {
 			.context("failed to load previous session")
 		{
 			Ok(ilias) => {
-				info!("checking session validity..");
+				info!("Checking session validity..");
 				// TODO: this probably isn't the best solution..
 				if let Err(e) = ilias.get_html(DEFAULT_SYNC_URL).await {
 					error!(e)
 				} else {
+					success!("Session still active!");
 					return Ok(ilias)
 				}
 			},
