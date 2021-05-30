@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::{error::Error as _, sync::Arc};
+use std::{error::Error as _, io::Write, sync::Arc};
 
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
@@ -138,7 +138,11 @@ impl ILIAS {
 		let session_path = self.opt.output.join(".iliassession");
 		let mut writer = std::fs::File::create(session_path).map(std::io::BufWriter::new).unwrap();
 		let store = self.cookies.lock().map_err(|x| anyhow!("{}", x))?;
-		store.save_json(&mut writer).map_err(|x| anyhow!(x))?;
+		// save all cookies, including session cookies
+		for cookie in store.iter_unexpired().map(serde_json::to_string) {
+			writeln!(writer, "{}", cookie?)?;
+		}
+		writer.flush()?;
 		Ok(())
 	}
 
