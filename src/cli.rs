@@ -12,7 +12,7 @@ use indicatif::ProgressBar;
 use once_cell::sync::Lazy;
 use structopt::StructOpt;
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Clone, StructOpt)]
 #[structopt(name = env!("CARGO_PKG_NAME"))]
 pub struct Opt {
 	/// Do not download files
@@ -86,7 +86,7 @@ pub static PROGRESS_BAR_ENABLED: AtomicBool = AtomicBool::new(false);
 pub static PROGRESS_BAR: Lazy<ProgressBar> = Lazy::new(|| ProgressBar::new(0));
 
 macro_rules! log {
-	($lvl:expr, $($t:expr),+) => {
+	($lvl:expr, $($t:expr),+) => {{
 		#[allow(unused_comparisons)] // 0 <= 0
 		if $lvl <= crate::cli::LOG_LEVEL.load(std::sync::atomic::Ordering::SeqCst) {
 			if crate::cli::PROGRESS_BAR_ENABLED.load(std::sync::atomic::Ordering::SeqCst) {
@@ -95,7 +95,7 @@ macro_rules! log {
 				println!($($t),+);
 			}
 		}
-	}
+	}}
 }
 
 macro_rules! info {

@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::error::Error as _;
+use std::{error::Error as _, sync::Arc};
 
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
+use cookie_store::CookieStore;
 use ignore::gitignore::Gitignore;
 use reqwest::{Client, IntoUrl, Proxy, Url};
+use reqwest_cookie_store::CookieStoreMutex;
 use scraper::{ElementRef, Html, Selector};
 use serde_json::json;
 
@@ -14,10 +16,8 @@ use crate::{cli::Opt, get_request_ticket, selectors::*, ILIAS_URL};
 pub struct ILIAS {
 	pub opt: Opt,
 	pub ignore: Gitignore,
-	// TODO: use these for re-authentication in case of session timeout/invalidation
-	user: String,
-	pass: String,
 	client: Client,
+	cookies: Arc<CookieStoreMutex>,
 }
 
 /// Returns true if the error is caused by:
@@ -36,12 +36,37 @@ fn error_is_http2(error: &reqwest::Error) -> bool {
 }
 
 impl ILIAS {
-	pub async fn login(opt: Opt, user: impl Into<String>, pass: impl Into<String>, ignore: Gitignore) -> Result<Self> {
-		let user = user.into();
-		let pass = pass.into();
-		let mut builder = Client::builder()
-			.cookie_store(true)
-			.user_agent(concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")));
+	// TODO: de-duplicate the logic below
+	pub async fn with_session(opt: Opt, session: Arc<CookieStoreMutex>, ignore: Gitignore) -> Result<Self> {
+		let mut builder =
+			Client::builder()
+				.cookie_provider(Arc::clone(&session))
+				.user_agent(concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")));
+		if let Some(proxy) = opt.proxy.as_ref() {
+			let proxy = Proxy::all(proxy)?;
+			builder = builder.proxy(proxy);
+		}
+		let client = builder
+			// timeout is infinite by default
+			.build()?;
+		info!("Re-using previous session cookies..");
+		Ok(ILIAS {
+			opt,
+			ignore,
+			client,
+			cookies: session,
+		})
+	}
+
+	pub async fn login(opt: Opt, user: &str, pass: &str, ignore: Gitignore) -> Result<Self> {
+		let cookie_store = CookieStore::default();
+		let cookie_store = reqwest_cookie_store::CookieStoreMutex::new(cookie_store);
+		let cookie_store = std::sync::Arc::new(cookie_store);
+		let mut builder = Client::builder().cookie_provider(Arc::clone(&cookie_store)).user_agent(concat!(
+			env!("CARGO_PKG_NAME"),
+			"/",
+			env!("CARGO_PKG_VERSION")
+		));
 		if let Some(proxy) = opt.proxy.as_ref() {
 			let proxy = Proxy::all(proxy)?;
 			builder = builder.proxy(proxy);
@@ -52,9 +77,8 @@ impl ILIAS {
 		let this = ILIAS {
 			opt,
 			ignore,
-			user,
-			pass,
 			client,
+			cookies: cookie_store,
 		};
 		info!("Logging into ILIAS using KIT account..");
 		let session_establishment = this
@@ -75,14 +99,16 @@ impl ILIAS {
 			.select(&Selector::parse(r#"input[name="csrf_token"]"#).unwrap())
 			.next()
 			.context("no CSRF token found")?
-			.value().attr("value").context("no CSRF token value")?;
+			.value()
+			.attr("value")
+			.context("no CSRF token value")?;
 		info!("Logging into Shibboleth..");
 		let login_response = this
 			.client
 			.post(url)
 			.form(&json!({
-				"j_username": &this.user,
-				"j_password": &this.pass,
+				"j_username": user,
+				"j_password": pass,
 				"_eventId_proceed": "",
 				"csrf_token": csrf_token,
 			}))
@@ -106,6 +132,14 @@ impl ILIAS {
 			.await?;
 		success!("Logged in!");
 		Ok(this)
+	}
+
+	pub async fn save_session(&self) -> Result<()> {
+		let session_path = self.opt.output.join(".iliassession");
+		let mut writer = std::fs::File::create(session_path).map(std::io::BufWriter::new).unwrap();
+		let store = self.cookies.lock().map_err(|x| anyhow!("{}", x))?;
+		store.save_json(&mut writer).map_err(|x| anyhow!(x))?;
+		Ok(())
 	}
 
 	pub async fn download(&self, url: &str) -> Result<reqwest::Response> {

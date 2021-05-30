@@ -6,7 +6,8 @@ and this project loosely adheres to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 ### Added
-- `--sync-url https://ilias.studium.kit.edu/ilias.php?baseClass=ilPersonalDesktopGUI&cmd=jumpToMemberships` to download all courses (unless specified otherwise in the `.iliasignore`)
+- `--sync-url` can now download all courses (unless specified otherwise in the `.iliasignore`)
+- `--keep-session` flag to save and restore session cookies
 
 ## [0.2.21] - 2021-05-18
 ### Fixed

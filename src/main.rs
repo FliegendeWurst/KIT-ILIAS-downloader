@@ -21,9 +21,11 @@ use url::Url;
 use std::collections::HashSet;
 use std::future::Future;
 use std::io;
+use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 pub const ILIAS_URL: &str = "https://ilias.studium.kit.edu/";
 
@@ -67,26 +69,41 @@ async fn main() {
 	}
 }
 
-async fn real_main(mut opt: Opt) -> Result<()> {
-	LOG_LEVEL.store(opt.verbose, Ordering::SeqCst);
-	#[cfg(windows)]
-	let _ = colored::control::set_virtual_terminal(true);
-
-	create_dir(&opt.output).await.context("failed to create output directory")?;
-	// use UNC paths on Windows (#6)
-	opt.output = fs::canonicalize(opt.output).await.context("failed to canonicalize output directory")?;
-
-	// load .iliasignore file
-	opt.output.push(".iliasignore");
-	let (ignore, error) = Gitignore::new(&opt.output);
-	if let Some(err) = error {
-		warning!(err);
+async fn try_to_load_session(opt: Opt, ignore: Gitignore) -> Result<ILIAS> {
+	let session_path = opt.output.join(".iliassession");
+	let meta = tokio::fs::metadata(&session_path).await?;
+	let modified = meta.modified()?;
+	let now = SystemTime::now();
+	// the previous session is only useful if it isn't older than ~1 hour
+	let duration = now.duration_since(modified)?;
+	if duration.as_secs() <= 60 * 60 {
+		let file = std::fs::File::open(session_path)?;
+		let cookies = cookie_store::CookieStore::load_json(BufReader::new(file))
+			.map_err(|err| anyhow!(err))
+			.context("failed to load session cookies")?;
+		let cookie_store = reqwest_cookie_store::CookieStoreMutex::new(cookies);
+		let cookie_store = std::sync::Arc::new(cookie_store);
+		Ok(ILIAS::with_session(opt, cookie_store, ignore).await?)
+	} else {
+		Err(anyhow!("session data too old"))
 	}
-	opt.output.pop();
+}
+
+async fn login(opt: Opt, ignore: Gitignore) -> Result<ILIAS> {
+	// load .iliassession file
+	if opt.keep_session {
+		match try_to_load_session(opt.clone(), ignore.clone())
+			.await
+			.context("failed to load previous session")
+		{
+			Ok(ilias) => return Ok(ilias),
+			Err(e) => warning!(e),
+		}
+	}
 
 	// loac .iliaslogin file
-	opt.output.push(".iliaslogin");
-	let login = std::fs::read_to_string(&opt.output);
+	let iliaslogin = opt.output.join(".iliaslogin");
+	let login = std::fs::read_to_string(&iliaslogin);
 	let (user, pass) = if let Ok(login) = login {
 		let mut lines = login.split('\n');
 		let user = lines.next().context("missing user in .iliaslogin")?;
@@ -97,15 +114,34 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 	} else {
 		ask_user_pass(&opt).context("credentials input failed")?
 	};
-	opt.output.pop();
 
-	let ilias = match ILIAS::login(opt, user, pass, ignore).await {
+	let ilias = match ILIAS::login(opt, &user, &pass, ignore).await {
 		Ok(ilias) => ilias,
 		Err(e) => {
 			error!(e);
 			std::process::exit(77);
 		},
 	};
+	Ok(ilias)
+}
+
+async fn real_main(mut opt: Opt) -> Result<()> {
+	LOG_LEVEL.store(opt.verbose, Ordering::SeqCst);
+	#[cfg(windows)]
+	let _ = colored::control::set_virtual_terminal(true);
+
+	create_dir(&opt.output).await.context("failed to create output directory")?;
+	// use UNC paths on Windows (to avoid the default max. path length of 255)
+	opt.output = fs::canonicalize(opt.output).await.context("failed to canonicalize output directory")?;
+
+	// load .iliasignore file
+	let (ignore, error) = Gitignore::new(opt.output.join(".iliasignore"));
+	if let Some(err) = error {
+		warning!(err);
+	}
+
+	let ilias = login(opt, ignore).await?;
+
 	if ilias.opt.content_tree {
 		if let Err(e) = ilias
 			.download("ilias.php?baseClass=ilRepositoryGUI&cmd=frameset&set_mode=tree&ref_id=1")
@@ -147,6 +183,11 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 			.await
 		{
 			warning!("could not disable content tree:", e);
+		}
+	}
+	if ilias.opt.keep_session {
+		if let Err(e) = ilias.save_session().await.context("failed to save session cookies") {
+			warning!(e)
 		}
 	}
 	if PROGRESS_BAR_ENABLED.load(Ordering::SeqCst) {
