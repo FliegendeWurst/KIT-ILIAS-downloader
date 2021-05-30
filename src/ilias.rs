@@ -184,6 +184,15 @@ impl ILIAS {
 	}
 
 	pub async fn get_html(&self, url: &str) -> Result<Html> {
+		let resp = self.download(url).await?;
+		if resp
+			.url()
+			.query()
+			.map(|x| x.contains("reloadpublic=1") || x.contains("cmd=force_login"))
+			.unwrap_or(false)
+		{
+			return Err(anyhow!("not logged in / session expired"));
+		}
 		let text = self.download(url).await?.text().await?;
 		let html = Html::parse_document(&text);
 		if html.select(&alert_danger).next().is_some() {
