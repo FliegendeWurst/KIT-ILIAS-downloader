@@ -3,15 +3,32 @@
 use std::{error::Error as _, io::Write, sync::Arc};
 
 use anyhow::{anyhow, Context, Result};
-use colored::Colorize;
 use cookie_store::CookieStore;
 use ignore::gitignore::Gitignore;
+use once_cell::sync::Lazy;
 use reqwest::{Client, IntoUrl, Proxy, Url};
 use reqwest_cookie_store::CookieStoreMutex;
 use scraper::{ElementRef, Html, Selector};
 use serde_json::json;
 
-use crate::{cli::Opt, get_request_ticket, selectors::*, ILIAS_URL};
+use crate::{cli::Opt, queue, ILIAS_URL};
+
+pub mod course;
+pub mod exercise;
+pub mod file;
+pub mod folder;
+pub mod forum;
+pub mod plugin_dispatch;
+pub mod thread;
+pub mod video;
+pub mod weblink;
+
+static LINKS: Lazy<Selector> = Lazy::new(|| Selector::parse("a").unwrap());
+static ALERT_DANGER: Lazy<Selector> = Lazy::new(|| Selector::parse("div.alert-danger").unwrap());
+static IL_CONTENT_CONTAINER: Lazy<Selector> = Lazy::new(|| Selector::parse("#il_center_col").unwrap());
+static ITEM_PROP: Lazy<Selector> = Lazy::new(|| Selector::parse("span.il_ItemProperty").unwrap());
+static CONTAINER_ITEMS: Lazy<Selector> = Lazy::new(|| Selector::parse("div.il_ContainerListItem").unwrap());
+static CONTAINER_ITEM_TITLE: Lazy<Selector> = Lazy::new(|| Selector::parse("a.il_ContainerItemTitle").unwrap());
 
 pub struct ILIAS {
 	pub opt: Opt,
@@ -38,10 +55,9 @@ fn error_is_http2(error: &reqwest::Error) -> bool {
 impl ILIAS {
 	// TODO: de-duplicate the logic below
 	pub async fn with_session(opt: Opt, session: Arc<CookieStoreMutex>, ignore: Gitignore) -> Result<Self> {
-		let mut builder =
-			Client::builder()
-				.cookie_provider(Arc::clone(&session))
-				.user_agent(concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")));
+		let mut builder = Client::builder()
+			.cookie_provider(Arc::clone(&session))
+			.user_agent(concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")));
 		if let Some(proxy) = opt.proxy.as_ref() {
 			let proxy = Proxy::all(proxy)?;
 			builder = builder.proxy(proxy);
@@ -62,11 +78,9 @@ impl ILIAS {
 		let cookie_store = CookieStore::default();
 		let cookie_store = reqwest_cookie_store::CookieStoreMutex::new(cookie_store);
 		let cookie_store = std::sync::Arc::new(cookie_store);
-		let mut builder = Client::builder().cookie_provider(Arc::clone(&cookie_store)).user_agent(concat!(
-			env!("CARGO_PKG_NAME"),
-			"/",
-			env!("CARGO_PKG_VERSION")
-		));
+		let mut builder = Client::builder()
+			.cookie_provider(Arc::clone(&cookie_store))
+			.user_agent(concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")));
 		if let Some(proxy) = opt.proxy.as_ref() {
 			let proxy = Proxy::all(proxy)?;
 			builder = builder.proxy(proxy);
@@ -118,7 +132,10 @@ impl ILIAS {
 			.await?;
 		let dom = Html::parse_document(&login_response);
 		let saml = Selector::parse(r#"input[name="SAMLResponse"]"#).unwrap();
-		let saml = dom.select(&saml).next().context("no SAML response, incorrect password?")?;
+		let saml = dom
+			.select(&saml)
+			.next()
+			.context("no SAML response, incorrect password?")?;
 		let relay_state = Selector::parse(r#"input[name="RelayState"]"#).unwrap();
 		let relay_state = dom.select(&relay_state).next().context("no relay state")?;
 		info!("Logging into ILIAS..");
@@ -136,7 +153,9 @@ impl ILIAS {
 
 	pub async fn save_session(&self) -> Result<()> {
 		let session_path = self.opt.output.join(".iliassession");
-		let mut writer = std::fs::File::create(session_path).map(std::io::BufWriter::new).unwrap();
+		let mut writer = std::fs::File::create(session_path)
+			.map(std::io::BufWriter::new)
+			.unwrap();
 		let store = self.cookies.lock().map_err(|x| anyhow!("{}", x))?;
 		// save all cookies, including session cookies
 		for cookie in store.iter_unexpired().map(serde_json::to_string) {
@@ -147,7 +166,7 @@ impl ILIAS {
 	}
 
 	pub async fn download(&self, url: &str) -> Result<reqwest::Response> {
-		get_request_ticket().await;
+		queue::get_request_ticket().await;
 		log!(2, "Downloading {}", url);
 		let url = if url.starts_with("http://") || url.starts_with("https://") {
 			url.to_owned()
@@ -171,7 +190,7 @@ impl ILIAS {
 	}
 
 	pub async fn head<U: IntoUrl>(&self, url: U) -> Result<reqwest::Response, reqwest::Error> {
-		get_request_ticket().await;
+		queue::get_request_ticket().await;
 		let url = url.into_url()?;
 		for attempt in 1..10 {
 			let result = self.client.head(url.clone()).send().await;
@@ -199,7 +218,7 @@ impl ILIAS {
 		}
 		let text = self.download(url).await?.text().await?;
 		let html = Html::parse_document(&text);
-		if html.select(&alert_danger).next().is_some() {
+		if html.select(&ALERT_DANGER).next().is_some() {
 			Err(anyhow!("ILIAS error"))
 		} else {
 			Ok(html)
@@ -209,7 +228,7 @@ impl ILIAS {
 	pub async fn get_html_fragment(&self, url: &str) -> Result<Html> {
 		let text = self.download(url).await?.text().await?;
 		let html = Html::parse_fragment(&text);
-		if html.select(&alert_danger).next().is_some() {
+		if html.select(&ALERT_DANGER).next().is_some() {
 			Err(anyhow!("ILIAS error"))
 		} else {
 			Ok(html)
@@ -217,9 +236,11 @@ impl ILIAS {
 	}
 
 	pub fn get_items(html: &Html) -> Vec<Result<Object>> {
-		html.select(&container_items)
+		html.select(&CONTAINER_ITEMS)
 			.flat_map(|item| {
-				item.select(&container_item_title).next().map(|link| Object::from_link(item, link))
+				item.select(&CONTAINER_ITEM_TITLE)
+					.next()
+					.map(|link| Object::from_link(item, link))
 				// items without links are ignored
 			})
 			.collect()
@@ -229,7 +250,7 @@ impl ILIAS {
 	pub async fn get_course_content(&self, url: &URL) -> Result<(Vec<Result<Object>>, Option<String>)> {
 		let html = self.get_html(&url.url).await?;
 
-		let main_text = if let Some(el) = html.select(&il_content_container).next() {
+		let main_text = if let Some(el) = html.select(&IL_CONTENT_CONTAINER).next() {
 			if !el
 				.children()
 				.flat_map(|x| x.value().as_element())
@@ -266,6 +287,10 @@ impl ILIAS {
 		}
 		Ok(items)
 	}
+}
+
+trait IliasObject {
+	fn download(ilias: Arc<ILIAS>) -> Result<()>;
 }
 
 #[derive(Debug)]
@@ -405,9 +430,15 @@ impl Object {
 					// download page containing metadata
 					return Ok(Generic { name, url });
 				} else {
-					let mut item_props = item.context("can't construct file object without HTML object")?.select(&item_prop);
+					let mut item_props = item
+						.context("can't construct file object without HTML object")?
+						.select(&ITEM_PROP);
 					let ext = item_props.next().context("cannot find file extension")?;
-					let version = item_props.nth(1).context("cannot find 3rd file metadata")?.text().collect::<String>();
+					let version = item_props
+						.nth(1)
+						.context("cannot find 3rd file metadata")?
+						.text()
+						.collect::<String>();
 					let version = version.trim();
 					if let Some(v) = version.strip_prefix("Version: ") {
 						name += "_v";

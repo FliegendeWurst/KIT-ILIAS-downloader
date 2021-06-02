@@ -6,8 +6,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize};
 #[cfg(feature = "keyring-auth")]
 use anyhow::anyhow;
 use anyhow::{Context, Result};
-#[cfg(feature = "keyring-auth")]
-use colored::Colorize as _;
 use indicatif::ProgressBar;
 use once_cell::sync::Lazy;
 use structopt::StructOpt;
@@ -87,6 +85,8 @@ pub static PROGRESS_BAR: Lazy<ProgressBar> = Lazy::new(|| ProgressBar::new(0));
 
 macro_rules! log {
 	($lvl:expr, $($t:expr),+) => {{
+		#[allow(unused_imports)]
+		use colored::Colorize as _;
 		#[allow(unused_comparisons)] // 0 <= 0
 		if $lvl <= crate::cli::LOG_LEVEL.load(std::sync::atomic::Ordering::SeqCst) {
 			if crate::cli::PROGRESS_BAR_ENABLED.load(std::sync::atomic::Ordering::SeqCst) {
@@ -111,21 +111,21 @@ macro_rules! success {
 }
 
 macro_rules! warning {
-	($e:expr) => {
+	($e:expr) => {{
 		log!(0, "Warning: {}", format!("{:?}", $e).bright_yellow());
-	};
-	($msg:expr, $e:expr) => {
+	}};
+	($msg:expr, $e:expr) => {{
 		log!(0, "Warning: {}", format!("{} {:?}", $msg, $e).bright_yellow());
-	};
-	($msg1:expr, $msg2:expr, $e:expr) => {
+	}};
+	($msg1:expr, $msg2:expr, $e:expr) => {{
 		log!(0, "Warning: {}", format!("{} {} {:?}", $msg1, $msg2, $e).bright_yellow());
-	};
-	(format => $($e:expr),+) => {
+	}};
+	(format => $($e:expr),+) => {{
 		log!(0, "Warning: {}", format!($($e),+).bright_yellow());
-	};
-	($lvl:expr; $($e:expr),+) => {
+	}};
+	($lvl:expr; $($e:expr),+) => {{
 		log!($lvl, "Warning: {}", format!($($e),+).bright_yellow());
-	}
+	}};
 }
 
 macro_rules! error {
