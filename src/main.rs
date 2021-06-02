@@ -188,7 +188,7 @@ fn process_gracefully(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> impl Fut
 		PROGRESS_BAR.inc_length(1);
 	}
 	async move {
-		let permit = queue::get_ticket();
+		let permit = queue::get_ticket().await;
 		let path_text = path.to_string_lossy().into_owned();
 		if let Err(e) = process(ilias, path, obj).await.context("failed to process URL") {
 			error!("Syncing {}", path_text; e);

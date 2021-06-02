@@ -29,14 +29,6 @@ pub fn set_download_rate(rate: usize) {
 		let mut interval = time::interval(time::Duration::from_secs_f64(60.0 / rate as f64));
 		loop {
 			interval.tick().await;
-			log!(
-				0,
-				"interval ticked @ {}",
-				std::time::SystemTime::now()
-					.duration_since(std::time::SystemTime::UNIX_EPOCH)
-					.unwrap()
-					.as_secs()
-			);
 			REQUEST_TICKETS.add_permits(1);
 		}
 	});
