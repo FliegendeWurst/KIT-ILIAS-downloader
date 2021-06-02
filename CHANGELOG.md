@@ -1,12 +1,13 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project loosely adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+
+## [0.2.22] - 2021-06-02
 ### Added
-- `--sync-url` can now download all courses (unless specified otherwise in the `.iliasignore`)
+- `--sync-url` can now download more "personal desktop" pages
 - `--keep-session` flag to save and restore session cookies
 
 ## [0.2.21] - 2021-05-18
@@ -133,7 +134,8 @@ and this project loosely adheres to [Semantic Versioning](https://semver.org/spe
 [@Craeckie]: https://github.com/Craeckie
 [@funnym0nk3y]: https://github.com/funnym0nk3y
 [@Ma27]: https://github.com/Ma27
-[Unreleased]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.21...HEAD
+[Unreleased]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.22...HEAD
+[0.2.22]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.21...v0.2.22
 [0.2.21]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.20...v0.2.21
 [0.2.20]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.19...v0.2.20
 [0.2.19]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.18...v0.2.19
