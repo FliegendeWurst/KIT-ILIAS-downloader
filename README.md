@@ -12,7 +12,7 @@ Download content from ILIAS. That includes:
 **Windows/Linux users**: go to the [releases](../../releases) and download the executable for your operating system.   
 **macOS users**: [Install Rust](https://www.rust-lang.org/tools/install) and compile from source:
 ```
-$ cargo install --all-features --git 'https://github.com/FliegendeWurst/KIT-ILIAS-downloader'
+$ cargo install --all-features --git 'https://github.com/FliegendeWurst/KIT-ILIAS-downloader' --branch stable
 ```
 
 ## Usage
@@ -36,7 +36,7 @@ $ KIT-ILIAS-downloader -o ./ILIAS/WS2021-HM1 --sync-url 'https://ilias.studium.k
 
 ```
 $ KIT-ILIAS-downloader --help
-KIT-ILIAS-downloader 0.2.21
+KIT-ILIAS-downloader 0.2.22
 
 USAGE:
     KIT-ILIAS-downloader [FLAGS] [OPTIONS] --output <output>
@@ -47,6 +47,7 @@ FLAGS:
     -f                    Re-download already present files
     -t, --forum           Download forum content
     -h, --help            Prints help information
+        --keep-session    Attempt to re-use session cookies
         --keyring         Use the system keyring
     -n, --no-videos       Do not download Opencast videos
     -s, --skip-files      Do not download files
