@@ -260,7 +260,10 @@ impl ILIAS {
 				&& el.inner_html().len() > 40
 			{
 				// ^ minimum length of useful content?
-				Some(el.inner_html())
+				// specify a base URL for relative links
+				let mut link_base = format!(r#"<base href="{}">"#, ILIAS_URL);
+				link_base += &el.inner_html();
+				Some(link_base)
 			} else {
 				// first element is the content overview => no custom text (?)
 				None
