@@ -251,23 +251,8 @@ impl ILIAS {
 		let html = self.get_html(&url.url).await?;
 
 		let main_text = if let Some(el) = html.select(&IL_CONTENT_CONTAINER).next() {
-			if !el
-				.children()
-				.flat_map(|x| x.value().as_element())
-				.next()
-				.map(|x| x.attr("class").unwrap_or_default().contains("ilContainerBlock"))
-				.unwrap_or(false)
-				&& el.inner_html().len() > 40
-			{
-				// ^ minimum length of useful content?
-				// specify a base URL for relative links
-				let mut link_base = format!(r#"<base href="{}">"#, ILIAS_URL);
-				link_base += &el.inner_html();
-				Some(link_base)
-			} else {
-				// first element is the content overview => no custom text (?)
-				None
-			}
+			// specify a base URL for relative links
+			Some(format!(r#"<base href="{}">{}"#, ILIAS_URL, el.inner_html()))
 		} else {
 			None
 		};
