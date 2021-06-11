@@ -79,10 +79,15 @@ pub async fn download(path: &Path, relative_path: &Path, ilias: Arc<ILIAS>, url:
 			}
 			if let Some(container) = container.select(&POST_ATTACHMENTS).next() {
 				for attachment in container.select(&LINKS) {
+					let href = attachment.value().attr("href").map(|x| x.to_owned())
+						.context("attachment link without href")?;
+					if href.contains("cmd=deliverZipFile") {
+						continue; // skip downloading all attachments as zip
+					}
 					attachments.push((
 						id.clone(),
 						attachment.text().collect::<String>(),
-						attachment.value().attr("href").map(|x| x.to_owned()),
+						href,
 					));
 				}
 			}
@@ -132,7 +137,6 @@ pub async fn download(path: &Path, relative_path: &Path, ilias: Arc<ILIAS>, url:
 		}));
 	}
 	for (id, name, url) in attachments {
-		let url = url.context("attachment without href")?;
 		let src = URL::from_href(&url)?;
 		let dl = ilias.download(&src.url).await?;
 		let mut path = path.to_owned();
