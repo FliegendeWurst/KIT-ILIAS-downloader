@@ -8,7 +8,7 @@ use scraper::Selector;
 use crate::{
 	handle_gracefully, process_gracefully,
 	queue::spawn,
-	util::{file_escape, write_file_data},
+	util::{file_escape, wrap_html, write_file_data},
 };
 
 use super::{Object, ILIAS, URL};
@@ -61,7 +61,7 @@ pub async fn download(path: &Path, relative_path: &Path, ilias: Arc<ILIAS>, url:
 			let link = container.select(&LINKS).next().context("post link not found")?;
 			let id = link.value().attr("id").context("no id in thread link")?.to_owned();
 			let name = format!("{}_{}_{}.html", id, author, title.trim());
-			let data = container.inner_html();
+			let data = wrap_html(&container.inner_html());
 			let path = path.join(file_escape(&name));
 			let relative_path = relative_path.join(file_escape(&name));
 			spawn(handle_gracefully(async move {
@@ -79,16 +79,15 @@ pub async fn download(path: &Path, relative_path: &Path, ilias: Arc<ILIAS>, url:
 			}
 			if let Some(container) = container.select(&POST_ATTACHMENTS).next() {
 				for attachment in container.select(&LINKS) {
-					let href = attachment.value().attr("href").map(|x| x.to_owned())
+					let href = attachment
+						.value()
+						.attr("href")
+						.map(|x| x.to_owned())
 						.context("attachment link without href")?;
 					if href.contains("cmd=deliverZipFile") {
 						continue; // skip downloading all attachments as zip
 					}
-					attachments.push((
-						id.clone(),
-						attachment.text().collect::<String>(),
-						href,
-					));
+					attachments.push((id.clone(), attachment.text().collect::<String>(), href));
 				}
 			}
 		}

@@ -11,7 +11,7 @@ use reqwest_cookie_store::CookieStoreMutex;
 use scraper::{ElementRef, Html, Selector};
 use serde_json::json;
 
-use crate::{cli::Opt, queue, ILIAS_URL};
+use crate::{cli::Opt, queue, util::wrap_html, ILIAS_URL};
 
 pub mod course;
 pub mod exercise;
@@ -251,8 +251,7 @@ impl ILIAS {
 		let html = self.get_html(&url.url).await?;
 
 		let main_text = if let Some(el) = html.select(&IL_CONTENT_CONTAINER).next() {
-			// specify a base URL for relative links
-			Some(format!(r#"<base href="{}">{}"#, ILIAS_URL, el.inner_html()))
+			Some(wrap_html(&el.inner_html()))
 		} else {
 			None
 		};

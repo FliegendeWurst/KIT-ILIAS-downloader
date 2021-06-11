@@ -10,7 +10,12 @@ use tokio_util::io::StreamReader;
 use std::io;
 use std::path::Path;
 
-use crate::Result;
+use crate::{Result, ILIAS_URL};
+
+/// Prepends a doctype and a base URL to the HTML fragment.
+pub fn wrap_html(html_fragment: &str) -> String {
+	format!(r#"<!DOCTYPE html>\n<base href="{}">{}"#, ILIAS_URL, html_fragment)
+}
 
 pub async fn write_stream_to_file(
 	path: &Path,
