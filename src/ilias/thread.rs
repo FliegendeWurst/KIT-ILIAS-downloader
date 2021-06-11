@@ -113,16 +113,19 @@ pub async fn download(path: &Path, relative_path: &Path, ilias: Arc<ILIAS>, url:
 		let src = URL::from_href(&image)?;
 		let dl = ilias.download(&src.url).await?;
 		let mut path = path.to_owned();
-		if let Some(m) = IMAGE_SRC_REGEX.captures(&image) {
+		let file_name = if let Some(m) = IMAGE_SRC_REGEX.captures(&image) {
 			// image uploaded to ILIAS
 			let (media_id, filename) = (m.get(1).unwrap().as_str(), m.get(2).unwrap().as_str());
-			path.push(file_escape(&format!("{}_{}_{}", id, media_id, filename)));
+			file_escape(&format!("{}_{}_{}", id, media_id, filename))
 		} else {
 			// external image
-			path.push(file_escape(&format!("{}_{}", id, image)));
-		}
+			file_escape(&format!("{}_{}", id, image))
+		};
+		path.push(&file_name);
+		let relative_path = relative_path.join(file_name);
 		spawn(handle_gracefully(async move {
 			let bytes = dl.bytes().await?;
+			log!(0, "Writing {}", relative_path.display());
 			write_file_data(&path, &mut &*bytes)
 				.await
 				.context("failed to write forum post image attachment")
@@ -133,9 +136,12 @@ pub async fn download(path: &Path, relative_path: &Path, ilias: Arc<ILIAS>, url:
 		let src = URL::from_href(&url)?;
 		let dl = ilias.download(&src.url).await?;
 		let mut path = path.to_owned();
-		path.push(file_escape(&format!("{}_{}", id, name)));
+		let file_name = file_escape(&format!("{}_{}", id, name));
+		path.push(&file_name);
+		let relative_path = relative_path.join(file_name);
 		spawn(handle_gracefully(async move {
 			let bytes = dl.bytes().await?;
+			log!(0, "Writing {}", relative_path.display());
 			write_file_data(&path, &mut &*bytes)
 				.await
 				.context("failed to write forum post file attachment")
