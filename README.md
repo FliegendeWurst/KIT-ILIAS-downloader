@@ -36,7 +36,7 @@ $ KIT-ILIAS-downloader -o ./ILIAS/WS2021-HM1 --sync-url 'https://ilias.studium.k
 
 ```
 $ KIT-ILIAS-downloader --help
-KIT-ILIAS-downloader 0.2.22
+KIT-ILIAS-downloader 0.2.23
 
 USAGE:
     KIT-ILIAS-downloader [FLAGS] [OPTIONS] --output <output>

@@ -5,6 +5,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.2.23] - 2021-06-14
+### Added
+- Logging output of saved forum post attachments
+
+### Changed
+- ILIAS folder/course pages are now always saved
+
+### Fixed
+- Links in saved ILIAS pages now work (see [`<base>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base))
+- ZIP of multiple forum post attachments is no longer downloaded
+
 ## [0.2.22] - 2021-06-02
 ### Added
 - `--sync-url` can now download more "personal desktop" pages
@@ -134,7 +145,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 [@Craeckie]: https://github.com/Craeckie
 [@funnym0nk3y]: https://github.com/funnym0nk3y
 [@Ma27]: https://github.com/Ma27
-[Unreleased]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.22...HEAD
+[Unreleased]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.23...HEAD
+[0.2.22]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.22...v0.2.23
 [0.2.22]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.21...v0.2.22
 [0.2.21]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.20...v0.2.21
 [0.2.20]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.19...v0.2.20
