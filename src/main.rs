@@ -5,8 +5,10 @@ use futures::future::{self, Either};
 use futures::StreamExt;
 use ignore::gitignore::Gitignore;
 use indicatif::{ProgressDrawTarget, ProgressStyle};
+use notify_rust::{Notification, Timeout};
+use scraper::Selector;
 use structopt::StructOpt;
-use tokio::fs;
+use tokio::{fs, time};
 
 use std::future::Future;
 use std::io::BufReader;
@@ -124,61 +126,47 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 
 	queue::set_download_rate(opt.rate);
 
-	let ilias = login(opt, ignore).await?;
+	let (user, pass) = ask_user_pass(&opt).context("credentials input failed")?;
+	let mut ilias = ILIAS::login(opt.clone(), &user, &pass, ignore.clone()).await.unwrap();
 
-	if ilias.opt.content_tree {
-		if let Err(e) = ilias
-			.download("ilias.php?baseClass=ilRepositoryGUI&cmd=frameset&set_mode=tree&ref_id=1")
-			.await
-		{
-			warning!("could not enable content tree:", e);
+	let not_logged_in_selector = Selector::parse(".il_ItemAlertProperty").unwrap();
+	let part_selector = Selector::parse(".il_ContainerListItem").unwrap();
+	let mut interval = time::interval(time::Duration::from_secs_f64(57.0));
+	loop {
+		match ilias.get_html("https://ilias.studium.kit.edu/goto.php?target=cat_97576").await {
+    		Ok(html) => {
+				if html.select(&not_logged_in_selector).next().is_some() {
+					ilias = ILIAS::login(opt.clone(), &user, &pass, ignore.clone()).await.unwrap();
+					continue;
+				}
+				let mut count = 0;
+				for part in html.select(&part_selector) {
+					count += 1;
+					let text = part.text().collect::<String>();
+					if !text.contains("Keine freien Plätze verfügbar") && !text.contains("Keine Anmeldung möglich") {
+						println!("[!!!] Element enthält unerwarteten Text!");
+						let _ = Notification::new()
+							.timeout(Timeout::Never)
+    						.summary("Termin vllt. da")
+    						.body("Element enthält unerwarteten Text!")
+    						.show();
+					}
+				}
+				if count > 4 {
+					println!("[!!!] Mehr als 4 HTML-Elemente");
+					let _ = Notification::new()
+						.timeout(Timeout::Never)
+    					.summary("Termin vllt. da")
+    					.body("Mehr als 4 Elemente")
+    					.show();
+				}
+			},
+		    Err(e) => {
+				warning!(e)
+			},
 		}
+		interval.tick().await;
 	}
-	let ilias = Arc::new(ilias);
-	let mut rx = queue::set_parallel_jobs(ilias.opt.jobs);
-	PROGRESS_BAR_ENABLED.store(atty::is(atty::Stream::Stdout), Ordering::SeqCst);
-	if PROGRESS_BAR_ENABLED.load(Ordering::SeqCst) {
-		PROGRESS_BAR.set_draw_target(ProgressDrawTarget::stderr_nohz());
-		PROGRESS_BAR.set_style(ProgressStyle::default_bar().template("[{pos}/{len}+] {wide_msg}"));
-		PROGRESS_BAR.set_message("initializing..");
-	}
-
-	let sync_url = ilias.opt.sync_url.as_deref().unwrap_or(DEFAULT_SYNC_URL);
-	let obj = Object::from_url(
-		URL::from_href(sync_url).context("invalid sync URL")?,
-		String::new(),
-		None,
-	)
-	.context("invalid sync object")?;
-	queue::spawn(process_gracefully(ilias.clone(), ilias.opt.output.clone(), obj));
-
-	while let Either::Left((task, _)) = future::select(rx.next(), future::ready(())).await {
-		if let Some(task) = task {
-			if let Err(e) = task.await {
-				error!(e)
-			}
-		} else {
-			break; // channel is empty => all tasks are completed
-		}
-	}
-	if ilias.opt.content_tree {
-		if let Err(e) = ilias
-			.download("ilias.php?baseClass=ilRepositoryGUI&cmd=frameset&set_mode=flat&ref_id=1")
-			.await
-		{
-			warning!("could not disable content tree:", e);
-		}
-	}
-	if ilias.opt.keep_session {
-		if let Err(e) = ilias.save_session().await.context("failed to save session cookies") {
-			warning!(e)
-		}
-	}
-	if PROGRESS_BAR_ENABLED.load(Ordering::SeqCst) {
-		PROGRESS_BAR.set_style(ProgressStyle::default_bar().template("[{pos}/{len}] {wide_msg}"));
-		PROGRESS_BAR.finish_with_message("done");
-	}
-	Ok(())
 }
 
 // https://github.com/rust-lang/rust/issues/53690#issuecomment-418911229
