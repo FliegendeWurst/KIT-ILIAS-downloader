@@ -33,6 +33,7 @@ h2 = "0.3.3"
 cookie_store = "0.14.0"
 reqwest_cookie_store = "0.1.5"
 bytes = "1.0.1"
+toml = "0.5.8"
 
 [features]
 default = []
