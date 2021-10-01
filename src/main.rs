@@ -8,6 +8,7 @@ use indicatif::{ProgressDrawTarget, ProgressStyle};
 use structopt::StructOpt;
 use tokio::fs;
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::io::BufReader;
 use std::path::PathBuf;
@@ -38,7 +39,7 @@ async fn main() {
 	}
 }
 
-async fn try_to_load_session(opt: Opt, ignore: Gitignore) -> Result<ILIAS> {
+async fn try_to_load_session(opt: Opt, ignore: Gitignore, course_names: HashMap<String, String>) -> Result<ILIAS> {
 	let session_path = opt.output.join(".iliassession");
 	let meta = tokio::fs::metadata(&session_path).await?;
 	let modified = meta.modified()?;
@@ -52,16 +53,16 @@ async fn try_to_load_session(opt: Opt, ignore: Gitignore) -> Result<ILIAS> {
 			.context("failed to load session cookies")?;
 		let cookie_store = reqwest_cookie_store::CookieStoreMutex::new(cookies);
 		let cookie_store = std::sync::Arc::new(cookie_store);
-		Ok(ILIAS::with_session(opt, cookie_store, ignore).await?)
+		Ok(ILIAS::with_session(opt, cookie_store, ignore, course_names).await?)
 	} else {
 		Err(anyhow!("session data too old"))
 	}
 }
 
-async fn login(opt: Opt, ignore: Gitignore) -> Result<ILIAS> {
+async fn login(opt: Opt, ignore: Gitignore, course_names: HashMap<String, String>) -> Result<ILIAS> {
 	// load .iliassession file
 	if opt.keep_session {
-		match try_to_load_session(opt.clone(), ignore.clone())
+		match try_to_load_session(opt.clone(), ignore.clone(), course_names.clone())
 			.await
 			.context("failed to load previous session")
 		{
@@ -79,7 +80,7 @@ async fn login(opt: Opt, ignore: Gitignore) -> Result<ILIAS> {
 		}
 	}
 
-	// loac .iliaslogin file
+	// load .iliaslogin file
 	let iliaslogin = opt.output.join(".iliaslogin");
 	let login = std::fs::read_to_string(&iliaslogin);
 	let (user, pass) = if let Ok(login) = login {
@@ -93,7 +94,7 @@ async fn login(opt: Opt, ignore: Gitignore) -> Result<ILIAS> {
 		ask_user_pass(&opt).context("credentials input failed")?
 	};
 
-	let ilias = match ILIAS::login(opt, &user, &pass, ignore).await {
+	let ilias = match ILIAS::login(opt, &user, &pass, ignore, course_names).await {
 		Ok(ilias) => ilias,
 		Err(e) => {
 			error!(e);
@@ -118,13 +119,24 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 
 	// load .iliasignore file
 	let (ignore, error) = Gitignore::new(opt.output.join(".iliasignore"));
+
+	// Load course_names.toml file
+	let course_names_path = opt.output.join("course_names.toml");
+	let course_names = if fs::metadata(&course_names_path).await.is_ok() {
+		// file exists, try to read it
+		toml::from_str(&fs::read_to_string(course_names_path).await.context("accessing course_names.toml")?).context("processing course_names.toml")?
+	} else {
+		// If file doesn't exist, initialise course_names with empty HashMap
+		HashMap::new()
+	};
+		
 	if let Some(err) = error {
 		warning!(err);
 	}
 
 	queue::set_download_rate(opt.rate);
 
-	let ilias = login(opt, ignore).await?;
+	let ilias = login(opt, ignore, course_names).await?;
 
 	if ilias.opt.content_tree {
 		if let Err(e) = ilias

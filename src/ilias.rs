@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::{error::Error as _, io::Write, sync::Arc};
+use std::{collections::HashMap, error::Error as _, io::Write, sync::Arc};
 
 use anyhow::{anyhow, Context, Result};
 use cookie_store::CookieStore;
@@ -35,6 +35,7 @@ pub struct ILIAS {
 	pub ignore: Gitignore,
 	client: Client,
 	cookies: Arc<CookieStoreMutex>,
+	pub course_names: HashMap<String, String>,
 }
 
 /// Returns true if the error is caused by:
@@ -54,7 +55,7 @@ fn error_is_http2(error: &reqwest::Error) -> bool {
 
 impl ILIAS {
 	// TODO: de-duplicate the logic below
-	pub async fn with_session(opt: Opt, session: Arc<CookieStoreMutex>, ignore: Gitignore) -> Result<Self> {
+	pub async fn with_session(opt: Opt, session: Arc<CookieStoreMutex>, ignore: Gitignore, course_names: HashMap<String, String>) -> Result<Self> {
 		let mut builder = Client::builder()
 			.cookie_provider(Arc::clone(&session))
 			.user_agent(concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")));
@@ -71,10 +72,11 @@ impl ILIAS {
 			ignore,
 			client,
 			cookies: session,
+			course_names,
 		})
 	}
 
-	pub async fn login(opt: Opt, user: &str, pass: &str, ignore: Gitignore) -> Result<Self> {
+	pub async fn login(opt: Opt, user: &str, pass: &str, ignore: Gitignore, course_names: HashMap<String, String>) -> Result<Self> {
 		let cookie_store = CookieStore::default();
 		let cookie_store = reqwest_cookie_store::CookieStoreMutex::new(cookie_store);
 		let cookie_store = std::sync::Arc::new(cookie_store);
@@ -93,6 +95,7 @@ impl ILIAS {
 			ignore,
 			client,
 			cookies: cookie_store,
+			course_names,
 		};
 		info!("Logging into ILIAS using KIT account..");
 		let session_establishment = this
