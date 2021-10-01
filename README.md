@@ -90,6 +90,13 @@ username
 password
 ```
 
+### Renaming course names (0.2.24+)
+If you'd like to avoid unwieldy course names (e.g. "24030 – Programmierparadigmen"), you can create a `course_names.toml` file in the output directory. It should contain the desired mapping of course names to folder names, e.g.:
+```
+"24030 – Programmierparadigmen" = "Propa"
+"Numerische Mathematik  für die Fachrichtungen Informatik und Ingenieurwesen" = "Numerik"
+```
+
 ## Similar programs
 
 - https://github.com/brantsch/kit-ilias-fuse/
