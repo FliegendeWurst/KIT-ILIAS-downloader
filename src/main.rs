@@ -122,15 +122,13 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 
 	// Load course_names.toml file
 	let course_names_path = opt.output.join("course_names.toml");
-	let course_names: HashMap<String, String>;
-
-	if fs::metadata(&course_names_path).await.is_ok() {
-		fs::read_to_string(&course_names_path).await.context("reading course_names.toml")?;
-		course_names = toml::from_str(&fs::read_to_string(course_names_path).await?).unwrap();
+	let course_names = if fs::metadata(&course_names_path).await.is_ok() {
+		// file exists, try to read it
+		toml::from_str(&fs::read_to_string(course_names_path).await.context("accessing course_names.toml")?).context("processing course_names.toml")?
 	} else {
 		// If file doesn't exist, initialise course_names with empty HashMap
-		course_names = HashMap::new();
-	}
+		HashMap::new()
+	};
 		
 	if let Some(err) = error {
 		warning!(err);
