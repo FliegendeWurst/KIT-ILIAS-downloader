@@ -70,7 +70,7 @@ async fn login(opt: Opt, ignore: Gitignore, course_names: HashMap<String, String
 				info!("Checking session validity..");
 				// TODO: this probably isn't the best solution..
 				if let Err(e) = ilias.get_html(DEFAULT_SYNC_URL).await {
-					error!(e)
+					error!(e);
 				} else {
 					success!("Session still active!");
 					return Ok(ilias);
@@ -172,7 +172,7 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 	while let Either::Left((task, _)) = future::select(rx.next(), future::ready(())).await {
 		if let Some(task) = task {
 			if let Err(e) = task.await {
-				error!(e)
+				error!(e);
 			}
 		} else {
 			break; // channel is empty => all tasks are completed

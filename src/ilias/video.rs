@@ -1,6 +1,6 @@
 use std::{
 	path::{Path, PathBuf},
-	process::{ExitStatus, Stdio},
+	process::Stdio,
 	sync::Arc,
 };
 

@@ -5,6 +5,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.2.24] - 2021-11-01
+### Added
+- `--combine-videos` option to merge multiple video streams of the same lecture
+- `--save-ilias-pages` option to also save the ILIAS overview pages of courses/folders
+
+### Fixed
+- Downloading of lectures that consist of multiple streams
+
 ## [0.2.23] - 2021-06-14
 ### Added
 - Logging output of saved forum post attachments
@@ -145,7 +153,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 [@Craeckie]: https://github.com/Craeckie
 [@funnym0nk3y]: https://github.com/funnym0nk3y
 [@Ma27]: https://github.com/Ma27
-[Unreleased]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.23...HEAD
+[Unreleased]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.24...HEAD
+[0.2.23]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.23...v0.2.24
 [0.2.23]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.22...v0.2.23
 [0.2.22]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.21...v0.2.22
 [0.2.21]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.20...v0.2.21
