@@ -37,6 +37,10 @@ pub struct Opt {
 	#[structopt(long)]
 	pub check_videos: bool,
 
+	/// Combine videos if there is more than one stream (requires ffmpeg)
+	#[structopt(long)]
+	pub combine_videos: bool,
+
 	/// Verbose logging
 	#[structopt(short, multiple = true, parse(from_occurrences))]
 	pub verbose: usize,
