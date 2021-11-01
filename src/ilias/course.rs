@@ -34,11 +34,13 @@ pub async fn download(path: PathBuf, ilias: Arc<ILIAS>, url: &URL, name: &str) -
 	} else {
 		ilias.get_course_content(&url).await?
 	};
-	if let Some(s) = content.1.as_ref() {
-		let path = path.join("course.html");
-		write_file_data(&path, &mut s.as_bytes())
-			.await
-			.context("failed to write course page html")?;
+	if ilias.opt.save_ilias_pages {
+		if let Some(s) = content.1.as_ref() {
+			let path = path.join("course.html");
+			write_file_data(&path, &mut s.as_bytes())
+				.await
+				.context("failed to write course page html")?;
+		}
 	}
 	for item in content.0 {
 		let item = item?;

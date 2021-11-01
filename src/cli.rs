@@ -41,6 +41,10 @@ pub struct Opt {
 	#[structopt(long)]
 	pub combine_videos: bool,
 
+	/// Save overview pages of ILIAS courses and folders
+	#[structopt(long)]
+	pub save_ilias_pages: bool,
+
 	/// Verbose logging
 	#[structopt(short, multiple = true, parse(from_occurrences))]
 	pub verbose: usize,
