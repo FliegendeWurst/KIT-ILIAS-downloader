@@ -1,4 +1,8 @@
-use std::{path::{Path, PathBuf}, process::{ExitStatus, Stdio}, sync::Arc};
+use std::{
+	path::{Path, PathBuf},
+	process::{ExitStatus, Stdio},
+	sync::Arc,
+};
 
 use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
@@ -59,7 +63,7 @@ pub async fn download(path: &Path, relative_path: &Path, ilias: Arc<ILIAS>, url:
 			}
 			arguments.push("-c".into());
 			arguments.push("copy".into());
-			for i in 0..(arguments.len() / 2)-1 {
+			for i in 0..(arguments.len() / 2) - 1 {
 				arguments.push("-map".into());
 				arguments.push(format!("{}", i));
 			}
@@ -70,7 +74,8 @@ pub async fn download(path: &Path, relative_path: &Path, ilias: Arc<ILIAS>, url:
 				.stdout(Stdio::null())
 				.spawn()
 				.context("failed to start ffmpeg")?
-				.wait().await
+				.wait()
+				.await
 				.context("failed to wait for ffmpeg")?;
 			if !status.success() {
 				error!(format!("ffmpeg failed to merge video files into {}", path.display()));
@@ -82,7 +87,12 @@ pub async fn download(path: &Path, relative_path: &Path, ilias: Arc<ILIAS>, url:
 	Ok(())
 }
 
-async fn download_all(path: &Path, streams: &Vec<serde_json::Value>, ilias: Arc<ILIAS>, relative_path: &Path) -> Result<Vec<PathBuf>> {
+async fn download_all(
+	path: &Path,
+	streams: &Vec<serde_json::Value>,
+	ilias: Arc<ILIAS>,
+	relative_path: &Path,
+) -> Result<Vec<PathBuf>> {
 	let mut paths = Vec::new();
 	for (i, stream) in streams.into_iter().enumerate() {
 		let url = stream
@@ -91,7 +101,13 @@ async fn download_all(path: &Path, streams: &Vec<serde_json::Value>, ilias: Arc<
 			.as_str()
 			.context("video src not string")?;
 		let new_path = path.join(format!("Stream{}.mp4", i + 1));
-		download_to_path(&ilias, &new_path, &relative_path.join(format!("Stream{}.mp4", i + 1)), url).await?;
+		download_to_path(
+			&ilias,
+			&new_path,
+			&relative_path.join(format!("Stream{}.mp4", i + 1)),
+			url,
+		)
+		.await?;
 		paths.push(new_path);
 	}
 	Ok(paths)

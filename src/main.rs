@@ -124,12 +124,17 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 	let course_names_path = opt.output.join("course_names.toml");
 	let course_names = if fs::metadata(&course_names_path).await.is_ok() {
 		// file exists, try to read it
-		toml::from_str(&fs::read_to_string(course_names_path).await.context("accessing course_names.toml")?).context("processing course_names.toml")?
+		toml::from_str(
+			&fs::read_to_string(course_names_path)
+				.await
+				.context("accessing course_names.toml")?,
+		)
+		.context("processing course_names.toml")?
 	} else {
 		// If file doesn't exist, initialise course_names with empty HashMap
 		HashMap::new()
 	};
-		
+
 	if let Some(err) = error {
 		warning!(err);
 	}
@@ -230,6 +235,9 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 	}
 	log!(1, "Syncing {} {}", obj.kind(), relative_path.to_string_lossy());
 	log!(2, " URL: {}", obj.url().url);
+	if obj.is_ignored_by_option(&ilias.opt) {
+		return Ok(());
+	}
 	if obj.is_dir() {
 		create_dir(&path).await?;
 	}

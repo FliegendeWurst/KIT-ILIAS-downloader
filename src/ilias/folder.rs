@@ -22,7 +22,9 @@ pub async fn download(path: &Path, ilias: Arc<ILIAS>, url: &URL) -> Result<()> {
 	}
 	for item in content.0 {
 		let item = item?;
-		let path = path.join(file_escape(ilias.course_names.get(item.name()).map(|x| &**x).unwrap_or(item.name())));
+		let path = path.join(file_escape(
+			ilias.course_names.get(item.name()).map(|x| &**x).unwrap_or(item.name()),
+		));
 		let ilias = Arc::clone(&ilias);
 		spawn(process_gracefully(ilias, path, item));
 	}

@@ -55,7 +55,12 @@ fn error_is_http2(error: &reqwest::Error) -> bool {
 
 impl ILIAS {
 	// TODO: de-duplicate the logic below
-	pub async fn with_session(opt: Opt, session: Arc<CookieStoreMutex>, ignore: Gitignore, course_names: HashMap<String, String>) -> Result<Self> {
+	pub async fn with_session(
+		opt: Opt,
+		session: Arc<CookieStoreMutex>,
+		ignore: Gitignore,
+		course_names: HashMap<String, String>,
+	) -> Result<Self> {
 		let mut builder = Client::builder()
 			.cookie_provider(Arc::clone(&session))
 			.user_agent(concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")));
@@ -76,7 +81,13 @@ impl ILIAS {
 		})
 	}
 
-	pub async fn login(opt: Opt, user: &str, pass: &str, ignore: Gitignore, course_names: HashMap<String, String>) -> Result<Self> {
+	pub async fn login(
+		opt: Opt,
+		user: &str,
+		pass: &str,
+		ignore: Gitignore,
+		course_names: HashMap<String, String>,
+	) -> Result<Self> {
 		let cookie_store = CookieStore::default();
 		let cookie_store = reqwest_cookie_store::CookieStoreMutex::new(cookie_store);
 		let cookie_store = std::sync::Arc::new(cookie_store);
@@ -463,6 +474,12 @@ impl Object {
 			"ilpersonaldesktopgui" => PersonalDesktop { url },
 			_ => Generic { name, url },
 		})
+	}
+
+	pub(crate) fn is_ignored_by_option(&self, opt: &Opt) -> bool {
+		(matches!(self, Object::Forum { .. }) && !opt.forum)
+			|| (matches!(self, Object::Video { .. }) && opt.no_videos)
+			|| (matches!(self, Object::File { .. }) && opt.skip_files)
 	}
 }
 
