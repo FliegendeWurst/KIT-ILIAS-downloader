@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 - `--combine-videos` option to merge multiple video streams of the same lecture
 - `--save-ilias-pages` option to also save the ILIAS overview pages of courses/folders
+- Configuration file to change course names (PR [#19] by [@thelukasprobst])
 
 ### Fixed
 - Downloading of lectures that consist of multiple streams
@@ -136,6 +137,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [0.1.0] - 2020-04-21
 (undocumented)
 
+[#19]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/pull/19
 [#15]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/15
 [#14]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/14
 [#13]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/13
