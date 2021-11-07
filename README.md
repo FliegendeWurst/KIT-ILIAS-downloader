@@ -36,23 +36,25 @@ $ KIT-ILIAS-downloader -o ./ILIAS/WS2021-HM1 --sync-url 'https://ilias.studium.k
 
 ```
 $ KIT-ILIAS-downloader --help
-KIT-ILIAS-downloader 0.2.23
+KIT-ILIAS-downloader 0.2.24
 
 USAGE:
     KIT-ILIAS-downloader [FLAGS] [OPTIONS] --output <output>
 
 FLAGS:
-        --check-videos    Re-check OpenCast lectures (slow)
-        --content-tree    Use content tree (experimental)
-    -f                    Re-download already present files
-    -t, --forum           Download forum content
-    -h, --help            Prints help information
-        --keep-session    Attempt to re-use session cookies
-        --keyring         Use the system keyring
-    -n, --no-videos       Do not download Opencast videos
-    -s, --skip-files      Do not download files
-    -V, --version         Prints version information
-    -v                    Verbose logging
+        --check-videos        Re-check OpenCast lectures (slow)
+        --combine-videos      Combine videos if there is more than one stream (requires ffmpeg)
+        --content-tree        Use content tree (experimental)
+    -f                        Re-download already present files
+    -t, --forum               Download forum content
+    -h, --help                Prints help information
+        --keep-session        Attempt to re-use session cookies
+        --keyring             Use the system keyring
+    -n, --no-videos           Do not download Opencast videos
+        --save-ilias-pages    Save overview pages of ILIAS courses and folders
+    -s, --skip-files          Do not download files
+    -V, --version             Prints version information
+    -v                        Verbose logging
 
 OPTIONS:
     -j, --jobs <jobs>            Parallel download jobs [default: 1]
@@ -93,7 +95,7 @@ password
 ### Renaming course names (0.2.24+)
 If you'd like to avoid unwieldy course names (e.g. "24030 – Programmierparadigmen"), you can create a `course_names.toml` file in the output directory. It should contain the desired mapping of course names to folder names, e.g.:
 ```
-"24030 – Programmierparadigmen" = "Propa"
+"24030 – Programmierparadigmen" = "ProPa"
 "Numerische Mathematik  für die Fachrichtungen Informatik und Ingenieurwesen" = "Numerik"
 ```
 
