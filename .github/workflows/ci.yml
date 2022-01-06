@@ -18,7 +18,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
-        features: ["", "--all-features"]
+        features: ["--all-features"]
 
     steps:
     - uses: actions/checkout@v2
