@@ -2,6 +2,7 @@ use std::{path::Path, sync::Arc};
 
 use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
+use regex::Regex;
 use reqwest::Url;
 use scraper::{Html, Selector};
 
@@ -13,6 +14,7 @@ static LINKS: Lazy<Selector> = Lazy::new(|| Selector::parse("a").unwrap());
 static A_TARGET_BLANK: Lazy<Selector> = Lazy::new(|| Selector::parse(r#"a[target="_blank"]"#).unwrap());
 static VIDEO_ROWS: Lazy<Selector> = Lazy::new(|| Selector::parse(".ilTableOuter > div > table > tbody > tr").unwrap());
 static TABLE_CELLS: Lazy<Selector> = Lazy::new(|| Selector::parse("td").unwrap());
+static LIST_URL: Lazy<Regex> = Lazy::new(|| Regex::new("ilias\\.php\\?ref_id=\\d+&cmdClass=xocteventgui&cmdNode=.{8}q&baseClass=ilObjPluginDispatchGUI&lang=.{2}&limit=20&cmd=asyncGetTableGUI&cmdMode=asynch").unwrap());
 
 const NO_ENTRIES: &str = "Keine Einträge";
 
@@ -21,10 +23,13 @@ pub async fn download(path: &Path, ilias: Arc<ILIAS>, url: &URL) -> Result<()> {
 		return Ok(());
 	}
 	let full_url = {
+		let html = ilias.download(&url.url).await?.text().await?;
+		let list_url = LIST_URL.find(&html).context("failed to find xoct event link")?.as_str();
+		let full_list_url = format!("{}{}", ILIAS_URL, list_url);
+
 		// first find the link to full video list
-		let list_url = format!("{}ilias.php?ref_id={}&cmdClass=xocteventgui&cmdNode=nc:n4:14u&baseClass=ilObjPluginDispatchGUI&lang=de&limit=20&cmd=asyncGetTableGUI&cmdMode=asynch", ILIAS_URL, url.ref_id);
-		log!(1, "Loading {}", list_url);
-		let data = ilias.download(&list_url).await?;
+		log!(1, "Loading {}", full_list_url);
+		let data = ilias.download(&full_list_url).await?;
 		let html = data.text().await?;
 		let html = Html::parse_fragment(&html);
 		html.select(&LINKS)
