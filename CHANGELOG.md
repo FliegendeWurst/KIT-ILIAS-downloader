@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2022-01-06
+### Fixed
+- ILIAS 7 update ([#27])
+
 ## [0.2.24] - 2021-11-01
 ### Added
 - `--combine-videos` option to merge multiple video streams of the same lecture
@@ -137,6 +141,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [0.1.0] - 2020-04-21
 (undocumented)
 
+[#27]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/27
 [#19]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/pull/19
 [#15]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/15
 [#14]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/14
@@ -155,7 +160,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 [@Craeckie]: https://github.com/Craeckie
 [@funnym0nk3y]: https://github.com/funnym0nk3y
 [@Ma27]: https://github.com/Ma27
-[Unreleased]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.24...HEAD
+[Unreleased]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.24...v0.3.0
+[0.2.24]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.23...v0.2.24
 [0.2.23]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.23...v0.2.24
 [0.2.23]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.22...v0.2.23
 [0.2.22]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.21...v0.2.22
