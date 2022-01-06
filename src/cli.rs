@@ -3,7 +3,6 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 
-#[cfg(feature = "keyring-auth")]
 use anyhow::anyhow;
 use anyhow::{Context, Result};
 use indicatif::ProgressBar;
@@ -63,7 +62,6 @@ pub struct Opt {
 
 	/// Use the system keyring
 	#[structopt(long)]
-	#[cfg(feature = "keyring-auth")]
 	pub keyring: bool,
 
 	/// KIT account username
@@ -151,42 +149,27 @@ pub fn ask_user_pass(opt: &Opt) -> Result<(String, String)> {
 	} else {
 		rprompt::prompt_reply_stdout("Username: ").context("username prompt")?
 	};
-	#[cfg(feature = "keyring-auth")]
 	let (pass, should_store);
-	#[cfg(feature = "keyring-auth")]
-	let keyring = Lazy::new(|| keyring::Keyring::new(env!("CARGO_PKG_NAME"), &user));
-	#[cfg(not(feature = "keyring-auth"))]
-	let pass;
-	cfg_if::cfg_if! { // TODO: deduplicate the logic below
-		if #[cfg(feature = "keyring-auth")] {
-			if let Some(password) = opt.password.as_ref() {
-				pass = password.clone();
-				should_store = true;
-			} else if opt.keyring {
-				match keyring.get_password() {
-					Ok(password) => {
-						pass = password;
-						should_store = false;
-					},
-					Err(e) => {
-						error!(e);
-						pass = rpassword::read_password_from_tty(Some("Password: ")).context("password prompt")?;
-						should_store = true;
-					}
-				}
-			} else {
+	let keyring = Lazy::new(|| keyring::Entry::new(env!("CARGO_PKG_NAME"), &user));
+	if let Some(password) = opt.password.as_ref() {
+		pass = password.clone();
+		should_store = true;
+	} else if opt.keyring {
+		match keyring.get_password() {
+			Ok(password) => {
+				pass = password;
+				should_store = false;
+			},
+			Err(e) => {
+				error!(e);
 				pass = rpassword::read_password_from_tty(Some("Password: ")).context("password prompt")?;
 				should_store = true;
-			}
-		} else {
-			if let Some(password) = opt.password.as_ref() {
-				pass = password.clone();
-			} else {
-				pass = rpassword::read_password_from_tty(Some("Password: ")).context("password prompt")?;
 			}
 		}
-	};
-	#[cfg(feature = "keyring-auth")]
+	} else {
+		pass = rpassword::read_password_from_tty(Some("Password: ")).context("password prompt")?;
+		should_store = true;
+	}
 	if should_store && opt.keyring {
 		keyring.set_password(&pass).map_err(|x| anyhow!(x.to_string()))?;
 	}
