@@ -28,8 +28,9 @@ static ALERT_DANGER: Lazy<Selector> = Lazy::new(|| Selector::parse("div.alert-da
 static IL_CONTENT_CONTAINER: Lazy<Selector> = Lazy::new(|| Selector::parse("#il_center_col").unwrap());
 static BLOCK_FAVORITES: Lazy<Selector> = Lazy::new(|| Selector::parse("#block_pditems_0").unwrap());
 static ITEM_PROP: Lazy<Selector> = Lazy::new(|| Selector::parse("span.il_ItemProperty").unwrap());
-static CONTAINER_ITEMS: Lazy<Selector> = Lazy::new(|| Selector::parse("div.il_ContainerListItem").unwrap());
+static CONTAINER_ITEMS: Lazy<Selector> = Lazy::new(|| Selector::parse("div.il_ContainerListItem, .il-std-item").unwrap());
 static CONTAINER_ITEM_TITLE: Lazy<Selector> = Lazy::new(|| Selector::parse("a.il_ContainerItemTitle").unwrap());
+static CONTAINER_ITEM_TITLE_ALTERNATIVE: Lazy<Selector> = Lazy::new(|| Selector::parse(".il-item-title > a").unwrap());
 
 pub struct ILIAS {
 	pub opt: Opt,
@@ -251,10 +252,16 @@ impl ILIAS {
 	}
 
 	pub fn get_items(html: &Html) -> Vec<Result<Object>> {
+		let html = if let Some(favorites) = html.select(&BLOCK_FAVORITES).next() {
+			favorites
+		} else {
+			html.root_element()
+		};
 		html.select(&CONTAINER_ITEMS)
 			.flat_map(|item| {
 				item.select(&CONTAINER_ITEM_TITLE)
 					.next()
+					.or_else(|| item.select(&CONTAINER_ITEM_TITLE_ALTERNATIVE).next())
 					.map(|link| Object::from_link(item, link))
 				// items without links are ignored
 			})

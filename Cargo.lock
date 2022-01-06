@@ -12,6 +12,7 @@ dependencies = [
  "cfg-if 1.0.0",
  "colored",
  "cookie_store",
+ "ego-tree",
  "futures",
  "futures-channel",
  "futures-util",
