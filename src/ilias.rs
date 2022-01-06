@@ -501,15 +501,10 @@ impl Object {
 pub struct URL {
 	pub url: String,
 	baseClass: String,
-	cmdClass: Option<String>,
-	cmdNode: Option<String>,
 	pub cmd: Option<String>,
-	forwardCmd: Option<String>,
 	pub thr_pk: Option<String>,
-	pos_pk: Option<String>,
 	pub ref_id: String,
 	target: Option<String>,
-	file: Option<String>,
 }
 
 #[allow(non_snake_case)]
@@ -518,15 +513,10 @@ impl URL {
 		URL {
 			url,
 			baseClass: String::new(),
-			cmdClass: None,
-			cmdNode: None,
 			cmd: None,
-			forwardCmd: None,
 			thr_pk: None,
-			pos_pk: None,
 			ref_id: String::new(),
 			target: None,
-			file: None,
 		}
 	}
 
@@ -537,42 +527,27 @@ impl URL {
 			Url::parse(href)?
 		};
 		let mut baseClass = String::new();
-		let mut cmdClass = None;
-		let mut cmdNode = None;
 		let mut cmd = None;
-		let mut forwardCmd = None;
 		let mut thr_pk = None;
-		let mut pos_pk = None;
 		let mut ref_id = String::new();
 		let mut target = None;
-		let mut file = None;
 		for (k, v) in url.query_pairs() {
 			match &*k {
 				"baseClass" => baseClass = v.into_owned(),
-				"cmdClass" => cmdClass = Some(v.into_owned()),
-				"cmdNode" => cmdNode = Some(v.into_owned()),
 				"cmd" => cmd = Some(v.into_owned()),
-				"forwardCmd" => forwardCmd = Some(v.into_owned()),
 				"thr_pk" => thr_pk = Some(v.into_owned()),
-				"pos_pk" => pos_pk = Some(v.into_owned()),
 				"ref_id" => ref_id = v.into_owned(),
 				"target" => target = Some(v.into_owned()),
-				"file" => file = Some(v.into_owned()),
 				_ => {},
 			}
 		}
 		Ok(URL {
 			url: url.into(),
 			baseClass,
-			cmdClass,
-			cmdNode,
 			cmd,
-			forwardCmd,
 			thr_pk,
-			pos_pk,
 			ref_id,
 			target,
-			file,
 		})
 	}
 }
