@@ -26,6 +26,7 @@ pub mod weblink;
 static LINKS: Lazy<Selector> = Lazy::new(|| Selector::parse("a").unwrap());
 static ALERT_DANGER: Lazy<Selector> = Lazy::new(|| Selector::parse("div.alert-danger").unwrap());
 static IL_CONTENT_CONTAINER: Lazy<Selector> = Lazy::new(|| Selector::parse("#il_center_col").unwrap());
+static BLOCK_FAVORITES: Lazy<Selector> = Lazy::new(|| Selector::parse("#block_pditems_0").unwrap());
 static ITEM_PROP: Lazy<Selector> = Lazy::new(|| Selector::parse("span.il_ItemProperty").unwrap());
 static CONTAINER_ITEMS: Lazy<Selector> = Lazy::new(|| Selector::parse("div.il_ContainerListItem").unwrap());
 static CONTAINER_ITEM_TITLE: Lazy<Selector> = Lazy::new(|| Selector::parse("a.il_ContainerItemTitle").unwrap());
@@ -265,7 +266,12 @@ impl ILIAS {
 		let html = self.get_html(&url.url).await?;
 
 		let main_text = if let Some(el) = html.select(&IL_CONTENT_CONTAINER).next() {
-			Some(wrap_html(&el.inner_html()))
+			// if we are currently extracting the dashboard, only select the favorites
+			if let Some(el) = el.select(&BLOCK_FAVORITES).next() {
+				Some(wrap_html(&el.inner_html()))
+			} else {
+				Some(wrap_html(&el.inner_html()))
+			}
 		} else {
 			None
 		};
@@ -298,7 +304,7 @@ trait IliasObject {
 pub enum Object {
 	Course { name: String, url: URL },
 	Folder { name: String, url: URL },
-	PersonalDesktop { url: URL },
+	Dashboard { url: URL },
 	File { name: String, url: URL },
 	Forum { name: String, url: URL },
 	Thread { url: URL },
@@ -330,7 +336,7 @@ impl Object {
 			| Generic { name, .. } => &name,
 			Thread { url } => &url.thr_pk.as_ref().unwrap(),
 			Video { url } => &url.url,
-			PersonalDesktop { .. } => panic!("name of personal desktop requested (this should never happen)"),
+			Dashboard { url } => &url.url
 		}
 	}
 
@@ -338,7 +344,7 @@ impl Object {
 		match self {
 			Course { url, .. }
 			| Folder { url, .. }
-			| PersonalDesktop { url }
+			| Dashboard { url }
 			| File { url, .. }
 			| Forum { url, .. }
 			| Thread { url }
@@ -357,7 +363,7 @@ impl Object {
 		match self {
 			Course { .. } => "course",
 			Folder { .. } => "folder",
-			PersonalDesktop { .. } => "personal desktop",
+			Dashboard { .. } => "dashboard",
 			File { .. } => "file",
 			Forum { .. } => "forum",
 			Thread { .. } => "thread",
@@ -376,7 +382,7 @@ impl Object {
 		matches!(
 			self,
 			Course { .. }
-				| Folder { .. } | PersonalDesktop { .. }
+				| Folder { .. } | Dashboard { .. }
 				| Forum { .. } | Thread { .. }
 				| Wiki { .. } | ExerciseHandler { .. }
 				| PluginDispatch { .. }
@@ -471,7 +477,7 @@ impl Object {
 				None => Course { name, url },
 			},
 			"ilobjplugindispatchgui" => PluginDispatch { name, url },
-			"ilpersonaldesktopgui" => PersonalDesktop { url },
+			"ildashboardgui" => Dashboard { url },
 			_ => Generic { name, url },
 		})
 	}

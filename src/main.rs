@@ -19,7 +19,7 @@ use std::time::SystemTime;
 static ILIAS_URL: &str = "https://ilias.studium.kit.edu/";
 /// main personal desktop
 static DEFAULT_SYNC_URL: &str =
-	"https://ilias.studium.kit.edu/ilias.php?baseClass=ilPersonalDesktopGUI&cmd=jumpToSelectedItems";
+	"https://ilias.studium.kit.edu/ilias.php?baseClass=ilDashboardGUI&cmd=jumpToMemberships";
 
 #[macro_use]
 mod cli;
@@ -245,7 +245,7 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 		Course { url, name } => {
 			ilias::course::download(path, ilias, url, name).await?;
 		},
-		Folder { url, .. } | PersonalDesktop { url } => {
+		Folder { url, .. } | Dashboard { url } => {
 			ilias::folder::download(&path, ilias, url).await?;
 		},
 		File { url, .. } => {
