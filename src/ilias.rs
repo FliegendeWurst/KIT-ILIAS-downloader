@@ -482,7 +482,8 @@ impl Object {
 				None => Course { name, url },
 			},
 			"ilobjplugindispatchgui" => PluginDispatch { name, url },
-			"ildashboardgui" => Dashboard { url },
+			// both the dashboard and the membership overview page work the same
+			"ildashboardgui" | "ilmembershipoverviewgui" => Dashboard { url },
 			_ => Generic { name, url },
 		})
 	}
