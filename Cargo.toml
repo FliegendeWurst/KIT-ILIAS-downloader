@@ -1,15 +1,15 @@
 [package]
 name = "KIT-ILIAS-downloader"
-version = "0.2.13"
-authors = ["FliegendeWurst <2012gdwu@web.de>"]
-license = "GPL-2.0"
+version = "0.3.1"
+authors = ["FliegendeWurst <2012gdwu@posteo.de>"]
+license = "GPL-3.0-or-later"
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-reqwest = { version = "0.11.0", default-features = false, features = ["cookies", "gzip", "json", "rustls-tls", "stream"] }
-tokio = { version = "1.0.2", features = ["full"] }
+reqwest = { version = "0.11.0", default-features = false, features = ["cookies", "gzip", "json", "rustls-tls", "stream", "socks"] }
+tokio = { version = "1.0.2", features = ["fs", "macros", "net", "rt-multi-thread", "process"] }
 tokio-util = { version = "0.6.1", features = ["io"] }
 serde_json = "1.0.51"
 scraper = "0.12.0"
@@ -18,10 +18,21 @@ futures = "0.3.8"
 futures-util = "0.3.8"
 futures-channel = "0.3.8"
 regex = "1.3.7"
-lazy_static = "1.4.0"
-parking_lot = "0.11.0"
 structopt = "0.3.13"
 rpassword = "5.0.0"
 rprompt = "1.0.5"
 ignore = "0.4.14"
 anyhow = "1.0.28"
+colored = "2.0.0"
+keyring = "1.0.0"
+cfg-if = "1.0.0"
+indicatif = "0.16.0"
+once_cell = "1.7.2"
+atty = "0.2.14"
+h2 = "0.3.3"
+cookie_store = "0.15.1"
+reqwest_cookie_store = "0.2.0"
+bytes = "1.0.1"
+toml = "0.5.8"
+tempfile = "3.2.0"
+ego-tree = "0.6.2"

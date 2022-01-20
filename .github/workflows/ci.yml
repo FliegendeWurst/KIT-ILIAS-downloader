@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - '**'
   pull_request:
     branches: [ master ]
 
@@ -17,12 +18,14 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
+        features: ["--all-features"]
 
     steps:
     - uses: actions/checkout@v2
     - name: Install Rust toolchain
       uses: actions-rs/toolchain@v1
       with:
+        profile: minimal
         toolchain: stable
 
     - name: Cache cargo directories
@@ -39,12 +42,10 @@ jobs:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
     - name: Build
-      run: cargo build --release --verbose
-    # there are currently no automated tests
-    - name: Run tests
-      run: cargo test --release --verbose
+      run: cargo build --release ${{ matrix.features }} --verbose
     - name: Archive artifacts
       uses: actions/upload-artifact@v2
+      if: matrix.features == '--all-features'
       with:
         name: Binaries
         path: |
