@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.3.2] - 2022-01-21
+### Fixed
+- Downloading of videos (PR [#28] by [@funnym0nk3y])
+
 ## [0.3.1] - 2022-01-07
 ### Fixed
 - `--sync-url` can now be used to download the [course memberships](https://ilias.studium.kit.edu/ilias.php?cmdClass=ilmembershipoverviewgui&cmdNode=iy&baseClass=ilmembershipoverviewgui)
