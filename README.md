@@ -36,12 +36,13 @@ $ KIT-ILIAS-downloader -o ./ILIAS/WS2021-HM1 --sync-url 'https://ilias.studium.k
 
 ```
 $ KIT-ILIAS-downloader --help
-KIT-ILIAS-downloader 0.2.24
+KIT-ILIAS-downloader 0.3.3
 
 USAGE:
     KIT-ILIAS-downloader [FLAGS] [OPTIONS] --output <output>
 
 FLAGS:
+        --all                 Download all courses
         --check-videos        Re-check OpenCast lectures (slow)
         --combine-videos      Combine videos if there is more than one stream (requires ffmpeg)
         --content-tree        Use content tree (experimental)
