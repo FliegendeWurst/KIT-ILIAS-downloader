@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.3.3] - 2022-03-21
+### Addded
+- `--all` flag to download all courses ([#30])
+
 ## [0.3.2] - 2022-01-21
 ### Fixed
 - Downloading of videos (PR [#28] by [@funnym0nk3y])
@@ -149,6 +153,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [0.1.0] - 2020-04-21
 (undocumented)
 
+[#30]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/30
 [#28]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/pull/28
 [#27]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/27
 [#19]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/pull/19
@@ -169,7 +174,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 [@Craeckie]: https://github.com/Craeckie
 [@funnym0nk3y]: https://github.com/funnym0nk3y
 [@Ma27]: https://github.com/Ma27
-[Unreleased]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.2.24...v0.3.0
