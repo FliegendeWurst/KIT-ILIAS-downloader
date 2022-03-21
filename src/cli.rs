@@ -83,6 +83,10 @@ pub struct Opt {
 	/// Attempt to re-use session cookies
 	#[structopt(long)]
 	pub keep_session: bool,
+
+	/// Download all courses
+	#[structopt(long)]
+	pub all: bool,
 }
 
 pub static LOG_LEVEL: AtomicUsize = AtomicUsize::new(0);
