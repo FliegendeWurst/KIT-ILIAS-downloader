@@ -166,12 +166,12 @@ pub fn ask_user_pass(opt: &Opt) -> Result<(String, String)> {
 			},
 			Err(e) => {
 				error!(e);
-				pass = rpassword::read_password_from_tty(Some("Password: ")).context("password prompt")?;
+				pass = rpassword::prompt_password("Password: ").context("password prompt")?;
 				should_store = true;
 			}
 		}
 	} else {
-		pass = rpassword::read_password_from_tty(Some("Password: ")).context("password prompt")?;
+		pass = rpassword::prompt_password("Password: ").context("password prompt")?;
 		should_store = true;
 	}
 	if should_store && opt.keyring {
