@@ -4,7 +4,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
-
+### Added
+- Display a warning if two or more courses/folders have the same name ([#31])
+ 
 ## [0.3.3] - 2022-03-21
 ### Addded
 - `--all` flag to download all courses ([#30])
@@ -153,6 +155,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [0.1.0] - 2020-04-21
 (undocumented)
 
+[#31]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/31
 [#30]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/30
 [#28]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/pull/28
 [#27]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/27

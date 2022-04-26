@@ -1,4 +1,4 @@
-use std::{path::Path, sync::Arc};
+use std::{path::Path, sync::Arc, collections::HashSet};
 
 use anyhow::{Context, Result};
 
@@ -20,11 +20,17 @@ pub async fn download(path: &Path, ilias: Arc<ILIAS>, url: &URL) -> Result<()> {
 				.context("failed to write folder page html")?;
 		}
 	}
+	let mut names = HashSet::new();
 	for item in content.0 {
 		let item = item?;
-		let path = path.join(file_escape(
+		let item_name = file_escape(
 			ilias.course_names.get(item.name()).map(|x| &**x).unwrap_or(item.name()),
-		));
+		);
+		if names.contains(&item_name) {
+			warning!(format => "folder {} contains duplicated folder {:?}", path.display(), item_name);
+		}
+		names.insert(item_name.clone());
+		let path = path.join(item_name);
 		let ilias = Arc::clone(&ilias);
 		spawn(process_gracefully(ilias, path, item));
 	}
