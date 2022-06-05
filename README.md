@@ -12,7 +12,7 @@ Download content from ILIAS. That includes:
 **Windows/Linux users**: go to the [releases](../../releases) and download the executable for your operating system.   
 **macOS users**: [Install Rust](https://www.rust-lang.org/tools/install) and compile from source:
 ```
-$ cargo install --all-features --git 'https://github.com/FliegendeWurst/KIT-ILIAS-downloader' --branch stable
+$ cargo install --all-features --git 'https://github.com/FliegendeWurst/KIT-ILIAS-downloader'
 ```
 
 ## Usage
