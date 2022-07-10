@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::io::{Error, ErrorKind};
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 
 use anyhow::anyhow;
@@ -71,6 +73,10 @@ pub struct Opt {
 	/// KIT account password
 	#[structopt(short = "P", long)]
 	pub password: Option<String>,
+
+	/// Path inside `pass(1)` to the password for shibboleth.
+	#[structopt(long)]
+	pub pass_path: Option<String>,
 
 	/// ILIAS page to download
 	#[structopt(long)]
@@ -169,6 +175,35 @@ pub fn ask_user_pass(opt: &Opt) -> Result<(String, String)> {
 				pass = rpassword::prompt_password("Password: ").context("password prompt")?;
 				should_store = true;
 			}
+		}
+	} else if let Some(pass_path) = &opt.pass_path {
+		let pw_out = Command::new("pass")
+			.arg("show")
+			.arg(pass_path)
+			.output()
+			.map_err(|x| {
+				if x.kind() == ErrorKind::NotFound {
+					Error::new(ErrorKind::NotFound, "pass not found in $PATH!")
+				} else {
+					x
+				}
+			})?;
+		if !pw_out.status.success() {
+			return Err(Error::new(
+				ErrorKind::Other,
+				format!(
+					"`pass` failed with non-zero exit code {}: {}",
+					pw_out.status.code()
+						.expect("Failed retrieving pass exit code!"),
+					String::from_utf8(pw_out.stderr)
+						.expect("Failed decoding stderr of pass!")
+				)
+			))?
+		} else {
+			pass = String::from_utf8(pw_out.stdout).map(|x| {
+				x.trim_end().to_string()
+			}).expect("utf-8 decode of `pass(1)`-output failed");
+			should_store = false;
 		}
 	} else {
 		pass = rpassword::prompt_password("Password: ").context("password prompt")?;
