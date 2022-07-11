@@ -35,8 +35,7 @@ $ KIT-ILIAS-downloader -o ./ILIAS/WS2021-HM1 --sync-url 'https://ilias.studium.k
 ### Options
 
 ```
-$ KIT-ILIAS-downloader --help
-KIT-ILIAS-downloader 0.3.3
+KIT-ILIAS-downloader 0.3.5
 
 USAGE:
     KIT-ILIAS-downloader [FLAGS] [OPTIONS] --output <output>
@@ -58,18 +57,19 @@ FLAGS:
     -v                        Verbose logging
 
 OPTIONS:
-    -j, --jobs <jobs>            Parallel download jobs [default: 1]
-    -o, --output <output>        Output directory
-    -P, --password <password>    KIT account password
-    -p, --proxy <proxy>          Proxy, e.g. socks5h://127.0.0.1:1080
-        --rate <rate>            Requests per minute [default: 8]
-        --sync-url <sync-url>    ILIAS page to download
-    -U, --username <username>    KIT account username
+    -j, --jobs <jobs>              Parallel download jobs [default: 1]
+    -o, --output <output>          Output directory
+        --pass-path <pass-path>    Path inside `pass(1)` to the password for your KIT account
+    -P, --password <password>      KIT account password
+    -p, --proxy <proxy>            Proxy, e.g. socks5h://127.0.0.1:1080
+        --rate <rate>              Requests per minute [default: 8]
+        --sync-url <sync-url>      ILIAS page to download
+    -U, --username <username>      KIT account username
 ```
 
 ### .iliasignore
 
-.gitignore syntax can be used in a `.iliasignore` file: (located in the output folder)
+.gitignore syntax can be used in a `.iliasignore` file: (located in the output directory)
 ```ignore
 # example 1: only download a single course
 /*/
@@ -81,10 +81,14 @@ OPTIONS:
 
 ### Credentials
 
-You can use the `--user` and `--keyring` options to get/store the password using the system password store.  
-If you use Linux, you'll have to compile from source to be able to use this option.
+You can use the `--user` and `--keyring` options to get/store the password using the system password store:
 ```
 $ KIT-ILIAS-downloader -U uabcd --keyring [...]
+```
+
+If you use [pass](https://www.passwordstore.org/), you can use the `--pass-path` option to specify which password store entry to use:
+```
+$ KIT-ILIAS-downloader -U uabcd --pass-path edu/kit/uskyk [...]
 ```
 
 You can also save your username and password in a `.iliaslogin` file: (located in the output folder)
@@ -92,6 +96,9 @@ You can also save your username and password in a `.iliaslogin` file: (located i
 username
 password
 ```
+
+When running the downloader multiple times in a short period of time, you may want to use the `--keep-session` flag.
+If specified, the downloader will save and restore session cookies (`.iliassession` file in the output directory).
 
 ### Renaming course names (0.2.24+)
 If you'd like to avoid unwieldy course names (e.g. "24030 – Programmierparadigmen"), you can create a `course_names.toml` file in the output directory. It should contain the desired mapping of course names to folder names, e.g.:

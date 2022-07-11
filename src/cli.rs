@@ -74,7 +74,7 @@ pub struct Opt {
 	#[structopt(short = "P", long)]
 	pub password: Option<String>,
 
-	/// Path inside `pass(1)` to the password for shibboleth.
+	/// Path inside `pass(1)` to the password for your KIT account
 	#[structopt(long)]
 	pub pass_path: Option<String>,
 

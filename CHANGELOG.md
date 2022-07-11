@@ -3,6 +3,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.5]
+### Added
+- `--pass-path` option to get the password from [pass](https://www.passwordstore.org/) (PR [#33] by [@Ma27])
+
 ## [0.3.4]
 ### Added
 - Display a warning if two or more courses/folders have the same name ([#31])
@@ -158,6 +162,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [0.1.0] - 2020-04-21
 (undocumented)
 
+[#33]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/pull/33
 [#31]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/31
 [#30]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/30
 [#28]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/pull/28
@@ -180,7 +185,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 [@Craeckie]: https://github.com/Craeckie
 [@funnym0nk3y]: https://github.com/funnym0nk3y
 [@Ma27]: https://github.com/Ma27
-[Unreleased]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.3.5...HEAD
+[0.3.5]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.3.5...v0.3.4
 [0.3.4]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.3.1...v0.3.2
