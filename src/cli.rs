@@ -201,8 +201,8 @@ pub fn ask_user_pass(opt: &Opt) -> Result<(String, String)> {
 			))?
 		} else {
 			pass = String::from_utf8(pw_out.stdout).map(|x| {
-				x.trim_end().to_string()
-			}).expect("utf-8 decode of `pass(1)`-output failed");
+				x.lines().next().map(|x| x.to_owned()).ok_or_else(|| anyhow!("empty pass(1) entry!"))
+			})?.expect("utf-8 decode of `pass(1)`-output failed");
 			should_store = false;
 		}
 	} else {
