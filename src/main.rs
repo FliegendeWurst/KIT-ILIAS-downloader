@@ -160,9 +160,14 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 		PROGRESS_BAR.set_message("initializing..");
 	}
 
-	let sync_url = ilias.opt.sync_url.as_deref().unwrap_or(DEFAULT_SYNC_URL);
+	let sync_url = if ilias.opt.all {
+		// change on ILIAS update
+		format!("{}ilias.php?cmdClass=ilmembershipoverviewgui&cmdNode=iy&baseClass=ilmembershipoverviewgui", ILIAS_URL)
+	} else {
+		ilias.opt.sync_url.as_deref().unwrap_or(DEFAULT_SYNC_URL).to_owned()
+	};
 	let obj = Object::from_url(
-		URL::from_href(sync_url).context("invalid sync URL")?,
+		URL::from_href(&sync_url).context("invalid sync URL")?,
 		String::new(),
 		None,
 	)
