@@ -14,7 +14,7 @@ static LINKS: Lazy<Selector> = Lazy::new(|| Selector::parse("a").unwrap());
 static A_TARGET_BLANK: Lazy<Selector> = Lazy::new(|| Selector::parse(r#"a[target="_blank"]"#).unwrap());
 static VIDEO_ROWS: Lazy<Selector> = Lazy::new(|| Selector::parse(".ilTableOuter > div > table > tbody > tr").unwrap());
 static TABLE_CELLS: Lazy<Selector> = Lazy::new(|| Selector::parse("td").unwrap());
-static LIST_URL: Lazy<Regex> = Lazy::new(|| Regex::new("ilias\\.php\\?ref_id=\\d+&cmdClass=xocteventgui&cmdNode=.{8}q&baseClass=ilObjPluginDispatchGUI.*&cmd=asyncGetTableGUI&cmdMode=asynch").unwrap());
+static LIST_URL: Lazy<Regex> = Lazy::new(|| Regex::new("ilias\\.php\\?ref_id=\\d+&cmdClass=xocteventgui&cmdNode=.{9}&baseClass=ilObjPluginDispatchGUI.*&cmd=asyncGetTableGUI&cmdMode=asynch").unwrap());
 
 const NO_ENTRIES: &str = "Keine Einträge";
 
