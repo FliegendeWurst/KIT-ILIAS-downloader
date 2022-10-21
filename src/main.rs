@@ -17,7 +17,6 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 static ILIAS_URL: &str = "https://ilias.studium.kit.edu/";
-/// main personal desktop
 static DEFAULT_SYNC_URL: &str =
 	"https://ilias.studium.kit.edu/ilias.php?baseClass=ilDashboardGUI&cmd=jumpToMemberships";
 
@@ -161,8 +160,10 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 	}
 
 	let sync_url = if ilias.opt.all {
-		// change on ILIAS update
-		format!("{}ilias.php?cmdClass=ilmembershipoverviewgui&cmdNode=iy&baseClass=ilmembershipoverviewgui", ILIAS_URL)
+		format!(
+			"{}ilias.php?cmdClass=ilmembershipoverviewgui&baseClass=ilmembershipoverviewgui",
+			ILIAS_URL
+		)
 	} else {
 		ilias.opt.sync_url.as_deref().unwrap_or(DEFAULT_SYNC_URL).to_owned()
 	};

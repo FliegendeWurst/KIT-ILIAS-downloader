@@ -28,8 +28,10 @@ static ALERT_DANGER: Lazy<Selector> = Lazy::new(|| Selector::parse("div.alert-da
 static IL_CONTENT_CONTAINER: Lazy<Selector> = Lazy::new(|| Selector::parse("#il_center_col").unwrap());
 static BLOCK_FAVORITES: Lazy<Selector> = Lazy::new(|| Selector::parse("#block_pditems_0").unwrap());
 static ITEM_PROP: Lazy<Selector> = Lazy::new(|| Selector::parse("span.il_ItemProperty").unwrap());
-static CONTAINER_ITEMS: Lazy<Selector> = Lazy::new(|| Selector::parse("div.il_ContainerListItem, .il-std-item").unwrap());
-static CONTAINER_ITEM_TITLE: Lazy<Selector> = Lazy::new(|| Selector::parse("a.il_ContainerItemTitle, .il-item-title > a").unwrap());
+static CONTAINER_ITEMS: Lazy<Selector> =
+	Lazy::new(|| Selector::parse("div.il_ContainerListItem, .il-std-item").unwrap());
+static CONTAINER_ITEM_TITLE: Lazy<Selector> =
+	Lazy::new(|| Selector::parse("a.il_ContainerItemTitle, .il-item-title > a").unwrap());
 
 pub struct ILIAS {
 	pub opt: Opt,
@@ -341,7 +343,7 @@ impl Object {
 			| Generic { name, .. } => &name,
 			Thread { url } => &url.thr_pk.as_ref().unwrap(),
 			Video { url } => &url.url,
-			Dashboard { url } => &url.url
+			Dashboard { url } => &url.url,
 		}
 	}
 

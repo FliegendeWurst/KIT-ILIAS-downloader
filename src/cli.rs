@@ -174,35 +174,34 @@ pub fn ask_user_pass(opt: &Opt) -> Result<(String, String)> {
 				error!(e);
 				pass = rpassword::prompt_password("Password: ").context("password prompt")?;
 				should_store = true;
-			}
+			},
 		}
 	} else if let Some(pass_path) = &opt.pass_path {
-		let pw_out = Command::new("pass")
-			.arg("show")
-			.arg(pass_path)
-			.output()
-			.map_err(|x| {
-				if x.kind() == ErrorKind::NotFound {
-					Error::new(ErrorKind::NotFound, "pass not found in $PATH!")
-				} else {
-					x
-				}
-			})?;
+		let pw_out = Command::new("pass").arg("show").arg(pass_path).output().map_err(|x| {
+			if x.kind() == ErrorKind::NotFound {
+				Error::new(ErrorKind::NotFound, "pass not found in $PATH!")
+			} else {
+				x
+			}
+		})?;
 		if !pw_out.status.success() {
 			return Err(Error::new(
 				ErrorKind::Other,
 				format!(
 					"`pass` failed with non-zero exit code {}: {}",
-					pw_out.status.code()
-						.expect("Failed retrieving pass exit code!"),
-					String::from_utf8(pw_out.stderr)
-						.expect("Failed decoding stderr of pass!")
-				)
-			))?
+					pw_out.status.code().expect("Failed retrieving pass exit code!"),
+					String::from_utf8(pw_out.stderr).expect("Failed decoding stderr of pass!")
+				),
+			))?;
 		} else {
-			pass = String::from_utf8(pw_out.stdout).map(|x| {
-				x.lines().next().map(|x| x.to_owned()).ok_or_else(|| anyhow!("empty pass(1) entry!"))
-			})?.expect("utf-8 decode of `pass(1)`-output failed");
+			pass = String::from_utf8(pw_out.stdout)
+				.map(|x| {
+					x.lines()
+						.next()
+						.map(|x| x.to_owned())
+						.ok_or_else(|| anyhow!("empty pass(1) entry"))
+				})?
+				.expect("utf-8 decode of `pass(1)`-output failed");
 			should_store = false;
 		}
 	} else {

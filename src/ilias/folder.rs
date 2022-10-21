@@ -1,4 +1,4 @@
-use std::{path::Path, sync::Arc, collections::HashSet};
+use std::{collections::HashSet, path::Path, sync::Arc};
 
 use anyhow::{Context, Result};
 
@@ -23,9 +23,7 @@ pub async fn download(path: &Path, ilias: Arc<ILIAS>, url: &URL) -> Result<()> {
 	let mut names = HashSet::new();
 	for item in content.0 {
 		let item = item?;
-		let item_name = file_escape(
-			ilias.course_names.get(item.name()).map(|x| &**x).unwrap_or(item.name()),
-		);
+		let item_name = file_escape(ilias.course_names.get(item.name()).map(|x| &**x).unwrap_or(item.name()));
 		if names.contains(&item_name) {
 			warning!(format => "folder {} contains duplicated folder {:?}", path.display(), item_name);
 		}
