@@ -1,6 +1,6 @@
 [package]
 name = "KIT-ILIAS-downloader"
-version = "0.3.5"
+version = "0.3.6"
 authors = ["FliegendeWurst <2012gdwu@posteo.de>"]
 license = "GPL-3.0-or-later"
 edition = "2018"

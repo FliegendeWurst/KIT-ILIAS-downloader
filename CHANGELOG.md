@@ -3,6 +3,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.6]
+### Fixed
+- `--all` once again downloads all courses you're a member of
+
 ## [0.3.5]
 ### Added
 - `--pass-path` option to get the password from [pass](https://www.passwordstore.org/) (PR [#33] by [@Ma27])
