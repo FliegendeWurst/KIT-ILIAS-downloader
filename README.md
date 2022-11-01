@@ -113,6 +113,15 @@ If you'd like to avoid unwieldy course names (e.g. "24030 – Programmierparadig
 "Numerische Mathematik  für die Fachrichtungen Informatik und Ingenieurwesen" = "Numerik"
 ```
 
+## Troubleshooting
+### Error when using `--keyring` option
+```
+PlatformFailure(Zbus(MethodError("org.freedesktop.DBus.Error.ServiceUnknown", Some("The name org.freedesktop.secrets was not provided by any .service files"), Msg { type: Error, sender: "org.freedesktop.DBus", reply-serial: 2, body: Signature: [
+        s (115),
+] })))
+```
+If you get the above error when activating the `--keyring` option, you need to make sure that your system keyring service (KeePassXC, GNOME Keyring, ...) is running.
+
 ## Similar programs
 
 - https://github.com/brantsch/kit-ilias-fuse/
