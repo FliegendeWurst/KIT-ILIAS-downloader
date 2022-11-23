@@ -25,6 +25,8 @@ mod cli;
 use cli::*;
 mod ilias;
 use ilias::*;
+mod iliasignore;
+use iliasignore::*;
 use Object::*;
 mod queue;
 mod util;
@@ -38,7 +40,7 @@ async fn main() {
 	}
 }
 
-async fn try_to_load_session(opt: Opt, ignore: Gitignore, course_names: HashMap<String, String>) -> Result<ILIAS> {
+async fn try_to_load_session(opt: Opt, ignore: IliasIgnore, course_names: HashMap<String, String>) -> Result<ILIAS> {
 	let session_path = opt.output.join(".iliassession");
 	let meta = tokio::fs::metadata(&session_path).await?;
 	let modified = meta.modified()?;
@@ -58,7 +60,7 @@ async fn try_to_load_session(opt: Opt, ignore: Gitignore, course_names: HashMap<
 	}
 }
 
-async fn login(opt: Opt, ignore: Gitignore, course_names: HashMap<String, String>) -> Result<ILIAS> {
+async fn login(opt: Opt, ignore: IliasIgnore, course_names: HashMap<String, String>) -> Result<ILIAS> {
 	// load .iliassession file
 	if opt.keep_session {
 		match try_to_load_session(opt.clone(), ignore.clone(), course_names.clone())
@@ -117,7 +119,7 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 		.context("failed to canonicalize output directory")?;
 
 	// load .iliasignore file
-	let (ignore, error) = Gitignore::new(opt.output.join(".iliasignore"));
+	let ignore = IliasIgnore::load(opt.output.clone())?;
 
 	// Load course_names.toml file
 	let course_names_path = opt.output.join("course_names.toml");
@@ -133,10 +135,6 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 		// If file doesn't exist, initialise course_names with empty HashMap
 		HashMap::new()
 	};
-
-	if let Some(err) = error {
-		warning!(err);
-	}
 
 	queue::set_download_rate(opt.rate);
 
@@ -235,7 +233,7 @@ async fn process(ilias: Arc<ILIAS>, path: PathBuf, obj: Object) -> Result<()> {
 		}
 	}
 	// root path should not be matched
-	if relative_path.parent().is_some() && ilias.ignore.matched(relative_path, obj.is_dir()).is_ignore() {
+	if relative_path.parent().is_some() && ilias.ignore.should_ignore(relative_path, obj.is_dir()) {
 		log!(1, "Ignored {}", relative_path.to_string_lossy());
 		return Ok(());
 	}

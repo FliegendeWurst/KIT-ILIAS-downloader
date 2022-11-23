@@ -4,14 +4,13 @@ use std::{collections::HashMap, error::Error as _, io::Write, sync::Arc};
 
 use anyhow::{anyhow, Context, Result};
 use cookie_store::CookieStore;
-use ignore::gitignore::Gitignore;
 use once_cell::sync::Lazy;
 use reqwest::{Client, IntoUrl, Proxy, Url};
 use reqwest_cookie_store::CookieStoreMutex;
 use scraper::{ElementRef, Html, Selector};
 use serde_json::json;
 
-use crate::{cli::Opt, queue, util::wrap_html, ILIAS_URL};
+use crate::{cli::Opt, queue, util::wrap_html, ILIAS_URL, iliasignore::IliasIgnore};
 
 pub mod course;
 pub mod exercise;
@@ -35,7 +34,7 @@ static CONTAINER_ITEM_TITLE: Lazy<Selector> =
 
 pub struct ILIAS {
 	pub opt: Opt,
-	pub ignore: Gitignore,
+	pub ignore: IliasIgnore,
 	client: Client,
 	cookies: Arc<CookieStoreMutex>,
 	pub course_names: HashMap<String, String>,
@@ -61,7 +60,7 @@ impl ILIAS {
 	pub async fn with_session(
 		opt: Opt,
 		session: Arc<CookieStoreMutex>,
-		ignore: Gitignore,
+		ignore: IliasIgnore,
 		course_names: HashMap<String, String>,
 	) -> Result<Self> {
 		let mut builder = Client::builder()
@@ -88,7 +87,7 @@ impl ILIAS {
 		opt: Opt,
 		user: &str,
 		pass: &str,
-		ignore: Gitignore,
+		ignore: IliasIgnore,
 		course_names: HashMap<String, String>,
 	) -> Result<Self> {
 		let cookie_store = CookieStore::default();
