@@ -14,7 +14,7 @@ impl IliasIgnore {
         let mut prefix = Vec::new();
         // example scenario:
         // path = /KIT/ILIAS/SS 23/Next Generation Internet
-        // iliasignore in ILIAS/.iliasignore: prefix = SS 23/Next Generation Internet
+        // iliasignore in ILIAS/.iliasignore: prefix = SS 23/Next Generation Internet/
         // iliasignore in Next Generation Internet/.iliasignore: prefix = ""
         loop {
             let (ignore, error) = Gitignore::new(path.join(".iliasignore"));

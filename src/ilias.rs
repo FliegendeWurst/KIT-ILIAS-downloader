@@ -5,6 +5,7 @@ use std::{collections::HashMap, error::Error as _, io::Write, sync::Arc};
 use anyhow::{anyhow, Context, Result};
 use cookie_store::CookieStore;
 use once_cell::sync::Lazy;
+use regex::Regex;
 use reqwest::{Client, IntoUrl, Proxy, Url};
 use reqwest_cookie_store::CookieStoreMutex;
 use scraper::{ElementRef, Html, Selector};
@@ -267,8 +268,8 @@ impl ILIAS {
 			.collect()
 	}
 
-	/// Returns subfolders and the main text in a course/folder/personal desktop.
-	pub async fn get_course_content(&self, url: &URL) -> Result<(Vec<Result<Object>>, Option<String>)> {
+	/// Returns subfolders, the main text in a course/folder/personal desktop and all links on the page.
+	pub async fn get_course_content(&self, url: &URL) -> Result<(Vec<Result<Object>>, Option<String>, Vec<String>)> {
 		let html = self.get_html(&url.url).await?;
 
 		let main_text = if let Some(el) = html.select(&IL_CONTENT_CONTAINER).next() {
@@ -281,7 +282,7 @@ impl ILIAS {
 		} else {
 			None
 		};
-		Ok((ILIAS::get_items(&html), main_text))
+		Ok((ILIAS::get_items(&html), main_text, html.select(&LINKS).flat_map(|x| x.value().attr("href").map(|x| x.to_owned())).collect()))
 	}
 
 	pub async fn get_course_content_tree(&self, ref_id: &str, cmd_node: &str) -> Result<Vec<Object>> {
