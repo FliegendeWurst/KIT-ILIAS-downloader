@@ -24,7 +24,7 @@ pub mod video;
 pub mod weblink;
 
 static LINKS: Lazy<Selector> = Lazy::new(|| Selector::parse("a").unwrap());
-static ALERT_DANGER: Lazy<Selector> = Lazy::new(|| Selector::parse("div.alert-danger").unwrap());
+static ALERT_DANGER: Lazy<Selector> = Lazy::new(|| Selector::parse("div.alert-danger, .il_ItemAlertProperty").unwrap());
 static IL_CONTENT_CONTAINER: Lazy<Selector> = Lazy::new(|| Selector::parse("#il_center_col").unwrap());
 static BLOCK_FAVORITES: Lazy<Selector> = Lazy::new(|| Selector::parse("#block_pditems_0").unwrap());
 static ITEM_PROP: Lazy<Selector> = Lazy::new(|| Selector::parse("span.il_ItemProperty").unwrap());
@@ -222,6 +222,10 @@ impl ILIAS {
 		}
 		unreachable!()
 	}
+	
+	pub async fn is_error_response(html: &Html) {
+		html.select(&ALERT_DANGER).next().is_some()
+	}
 
 	pub async fn get_html(&self, url: &str) -> Result<Html> {
 		let resp = self.download(url).await?;
@@ -235,7 +239,7 @@ impl ILIAS {
 		}
 		let text = self.download(url).await?.text().await?;
 		let html = Html::parse_document(&text);
-		if html.select(&ALERT_DANGER).next().is_some() {
+		if ILIAS::is_error_response(&html) {
 			Err(anyhow!("ILIAS error"))
 		} else {
 			Ok(html)
@@ -245,7 +249,7 @@ impl ILIAS {
 	pub async fn get_html_fragment(&self, url: &str) -> Result<Html> {
 		let text = self.download(url).await?.text().await?;
 		let html = Html::parse_fragment(&text);
-		if html.select(&ALERT_DANGER).next().is_some() {
+		if ILIAS::is_error_response(&html) {
 			Err(anyhow!("ILIAS error"))
 		} else {
 			Ok(html)
