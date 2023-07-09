@@ -10,7 +10,7 @@ use reqwest_cookie_store::CookieStoreMutex;
 use scraper::{ElementRef, Html, Selector};
 use serde_json::json;
 
-use crate::{cli::Opt, queue, util::wrap_html, ILIAS_URL, iliasignore::IliasIgnore};
+use crate::{cli::Opt, iliasignore::IliasIgnore, queue, util::wrap_html, ILIAS_URL};
 
 pub mod course;
 pub mod exercise;
@@ -221,7 +221,7 @@ impl ILIAS {
 		}
 		unreachable!()
 	}
-	
+
 	pub fn is_error_response(html: &Html) -> bool {
 		html.select(&ALERT_DANGER).next().is_some()
 	}
@@ -285,7 +285,13 @@ impl ILIAS {
 		} else {
 			None
 		};
-		Ok((ILIAS::get_items(&html), main_text, html.select(&LINKS).flat_map(|x| x.value().attr("href").map(|x| x.to_owned())).collect()))
+		Ok((
+			ILIAS::get_items(&html),
+			main_text,
+			html.select(&LINKS)
+				.flat_map(|x| x.value().attr("href").map(|x| x.to_owned()))
+				.collect(),
+		))
 	}
 
 	pub async fn get_course_content_tree(&self, ref_id: &str, cmd_node: &str) -> Result<Vec<Object>> {
