@@ -5,7 +5,6 @@ use std::{collections::HashMap, error::Error as _, io::Write, sync::Arc};
 use anyhow::{anyhow, Context, Result};
 use cookie_store::CookieStore;
 use once_cell::sync::Lazy;
-use regex::Regex;
 use reqwest::{Client, IntoUrl, Proxy, Url};
 use reqwest_cookie_store::CookieStoreMutex;
 use scraper::{ElementRef, Html, Selector};
@@ -223,7 +222,7 @@ impl ILIAS {
 		unreachable!()
 	}
 	
-	pub async fn is_error_response(html: &Html) {
+	pub fn is_error_response(html: &Html) -> bool {
 		html.select(&ALERT_DANGER).next().is_some()
 	}
 
