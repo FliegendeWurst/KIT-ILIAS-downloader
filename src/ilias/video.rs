@@ -34,7 +34,7 @@ pub async fn download(path: &Path, relative_path: &Path, ilias: Arc<ILIAS>, url:
 		let json = &json_capture.next().context("xoct player json not found")?[1];
 		log!(2, "{}", json);
 		let json = json.split(",\n").next().context("invalid xoct player json")?;
-		serde_json::from_str(&json.trim())?
+		serde_json::from_str(json.trim())?
 	};
 	log!(2, "{}", json);
 	let streams = json
@@ -49,52 +49,50 @@ pub async fn download(path: &Path, relative_path: &Path, ilias: Arc<ILIAS>, url:
 			.as_str()
 			.context("video src not string")?;
 		download_to_path(&ilias, path, relative_path, url).await?;
+	} else if !ilias.opt.combine_videos {
+		fs::create_dir(path).await.context("failed to create video directory")?;
+		download_all(path, streams, ilias, relative_path).await?;
 	} else {
-		if !ilias.opt.combine_videos {
-			fs::create_dir(path).await.context("failed to create video directory")?;
-			download_all(path, streams, ilias, relative_path).await?;
-		} else {
-			let dir = tempdir()?;
-			// construct ffmpeg command to combine all files
-			let mut arguments = vec![];
-			for file in download_all(dir.path(), streams, ilias, relative_path).await? {
-				arguments.push("-i".to_owned());
-				arguments.push(file.to_str().context("invalid UTF8")?.into());
-			}
-			arguments.push("-c".into());
-			arguments.push("copy".into());
-			for i in 0..(arguments.len() / 2) - 1 {
-				arguments.push("-map".into());
-				arguments.push(format!("{}", i));
-			}
-			arguments.push(path.to_str().context("invalid UTF8 in path")?.into());
-			let status = Command::new("ffmpeg")
-				.args(&arguments)
-				.stderr(Stdio::null())
-				.stdout(Stdio::null())
-				.spawn()
-				.context("failed to start ffmpeg")?
-				.wait()
-				.await
-				.context("failed to wait for ffmpeg")?;
-			if !status.success() {
-				error!(format!("ffmpeg failed to merge video files into {}", path.display()));
-				error!(format!("check this directory: {}", dir.into_path().display()));
-				error!(format!("ffmpeg command: {}", arguments.join(" ")));
-			}
-		};
+		let dir = tempdir()?;
+		// construct ffmpeg command to combine all files
+		let mut arguments = vec![];
+		for file in download_all(dir.path(), streams, ilias, relative_path).await? {
+			arguments.push("-i".to_owned());
+			arguments.push(file.to_str().context("invalid UTF8")?.into());
+		}
+		arguments.push("-c".into());
+		arguments.push("copy".into());
+		for i in 0..(arguments.len() / 2) - 1 {
+			arguments.push("-map".into());
+			arguments.push(format!("{}", i));
+		}
+		arguments.push(path.to_str().context("invalid UTF8 in path")?.into());
+		let status = Command::new("ffmpeg")
+			.args(&arguments)
+			.stderr(Stdio::null())
+			.stdout(Stdio::null())
+			.spawn()
+			.context("failed to start ffmpeg")?
+			.wait()
+			.await
+			.context("failed to wait for ffmpeg")?;
+		if !status.success() {
+			error!(format!("ffmpeg failed to merge video files into {}", path.display()));
+			error!(format!("check this directory: {}", dir.into_path().display()));
+			error!(format!("ffmpeg command: {}", arguments.join(" ")));
+		}
 	}
 	Ok(())
 }
 
 async fn download_all(
 	path: &Path,
-	streams: &Vec<serde_json::Value>,
+	streams: &[serde_json::Value],
 	ilias: Arc<ILIAS>,
 	relative_path: &Path,
 ) -> Result<Vec<PathBuf>> {
 	let mut paths = Vec::new();
-	for (i, stream) in streams.into_iter().enumerate() {
+	for (i, stream) in streams.iter().enumerate() {
 		let url = stream
 			.pointer("/sources/mp4/0/src")
 			.context("video src not found")?
@@ -126,9 +124,9 @@ async fn download_to_path(ilias: &ILIAS, path: &Path, relative_path: &Path, url:
 			}
 		}
 	} else {
-		let resp = ilias.download(&url).await?;
+		let resp = ilias.download(url).await?;
 		log!(0, "Writing {}", relative_path.to_string_lossy());
-		write_stream_to_file(&path, resp.bytes_stream()).await?;
+		write_stream_to_file(path, resp.bytes_stream()).await?;
 	}
 	Ok(())
 }

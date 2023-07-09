@@ -24,7 +24,7 @@ impl IliasIgnore {
 			if let Some(err) = error {
 				warning!(err);
 			}
-			if ignore.len() > 0 {
+			if !ignore.is_empty() {
 				ignores.push(IgnoreFile {
 					ignore,
 					prefix: prefix.iter().fold(OsString::new(), |mut acc, el| {

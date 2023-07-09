@@ -17,7 +17,7 @@ static EXPAND_LINK: Lazy<Regex> = Lazy::new(|| Regex::new("expand=\\d").unwrap()
 
 #[async_recursion]
 pub async fn download(path: &Path, ilias: Arc<ILIAS>, url: &URL) -> Result<()> {
-	let content = ilias.get_course_content(&url).await?;
+	let content = ilias.get_course_content(url).await?;
 
 	// expand all sessions
 	for href in content.2 {

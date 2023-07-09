@@ -45,12 +45,9 @@ pub struct ILIAS {
 fn error_is_http2(error: &reqwest::Error) -> bool {
 	error
 		.source() // hyper::Error
-		.map(|x| x.source()) // h2::Error
-		.flatten()
-		.map(|x| x.downcast_ref::<h2::Error>())
-		.flatten()
-		.map(|x| x.reason())
-		.flatten()
+		.and_then(|x| x.source()) // h2::Error
+		.and_then(|x| x.downcast_ref::<h2::Error>())
+		.and_then(|x| x.reason())
 		.map(|x| x == h2::Reason::NO_ERROR)
 		.unwrap_or(false)
 }
@@ -349,8 +346,8 @@ impl Object {
 			| Presentation { name, .. }
 			| ExerciseHandler { name, .. }
 			| PluginDispatch { name, .. }
-			| Generic { name, .. } => &name,
-			Thread { url } => &url.thr_pk.as_ref().unwrap(),
+			| Generic { name, .. } => name,
+			Thread { url } => url.thr_pk.as_ref().unwrap(),
 			Video { url } => &url.url,
 			Dashboard { url } => &url.url,
 		}
@@ -371,7 +368,7 @@ impl Object {
 			| ExerciseHandler { url, .. }
 			| PluginDispatch { url, .. }
 			| Video { url }
-			| Generic { url, .. } => &url,
+			| Generic { url, .. } => url,
 		}
 	}
 

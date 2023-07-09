@@ -28,12 +28,12 @@ pub async fn download(path: PathBuf, ilias: Arc<ILIAS>, url: &URL, name: &str) -
 					return Ok(()); // ignore groups we are not in
 				}
 				warning!(name, "falling back to incomplete course content extractor!", e);
-				let (items, main_text, _) = ilias.get_course_content(&url).await?;
+				let (items, main_text, _) = ilias.get_course_content(url).await?;
 				(items, main_text)
 			},
 		}
 	} else {
-		let (items, main_text, _) = ilias.get_course_content(&url).await?;
+		let (items, main_text, _) = ilias.get_course_content(url).await?;
 		(items, main_text)
 	};
 	if ilias.opt.save_ilias_pages {
