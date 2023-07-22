@@ -3,7 +3,6 @@
 use anyhow::{anyhow, Context, Result};
 use futures::future::{self, Either};
 use futures::StreamExt;
-use ignore::gitignore::Gitignore;
 use indicatif::{ProgressDrawTarget, ProgressStyle};
 use structopt::StructOpt;
 use tokio::fs;

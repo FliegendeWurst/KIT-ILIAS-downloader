@@ -5,13 +5,12 @@ use std::{collections::HashMap, error::Error as _, io::Write, sync::Arc};
 use anyhow::{anyhow, Context, Result};
 use cookie_store::CookieStore;
 use once_cell::sync::Lazy;
-use regex::Regex;
 use reqwest::{Client, IntoUrl, Proxy, Url};
 use reqwest_cookie_store::CookieStoreMutex;
 use scraper::{ElementRef, Html, Selector};
 use serde_json::json;
 
-use crate::{cli::Opt, queue, util::wrap_html, ILIAS_URL, iliasignore::IliasIgnore};
+use crate::{cli::Opt, iliasignore::IliasIgnore, queue, util::wrap_html, ILIAS_URL};
 
 pub mod course;
 pub mod exercise;
@@ -46,12 +45,9 @@ pub struct ILIAS {
 fn error_is_http2(error: &reqwest::Error) -> bool {
 	error
 		.source() // hyper::Error
-		.map(|x| x.source()) // h2::Error
-		.flatten()
-		.map(|x| x.downcast_ref::<h2::Error>())
-		.flatten()
-		.map(|x| x.reason())
-		.flatten()
+		.and_then(|x| x.source()) // h2::Error
+		.and_then(|x| x.downcast_ref::<h2::Error>())
+		.and_then(|x| x.reason())
 		.map(|x| x == h2::Reason::NO_ERROR)
 		.unwrap_or(false)
 }
@@ -222,8 +218,8 @@ impl ILIAS {
 		}
 		unreachable!()
 	}
-	
-	pub async fn is_error_response(html: &Html) {
+
+	pub fn is_error_response(html: &Html) -> bool {
 		html.select(&ALERT_DANGER).next().is_some()
 	}
 
@@ -286,7 +282,13 @@ impl ILIAS {
 		} else {
 			None
 		};
-		Ok((ILIAS::get_items(&html), main_text, html.select(&LINKS).flat_map(|x| x.value().attr("href").map(|x| x.to_owned())).collect()))
+		Ok((
+			ILIAS::get_items(&html),
+			main_text,
+			html.select(&LINKS)
+				.flat_map(|x| x.value().attr("href").map(|x| x.to_owned()))
+				.collect(),
+		))
 	}
 
 	pub async fn get_course_content_tree(&self, ref_id: &str, cmd_node: &str) -> Result<Vec<Object>> {
@@ -344,8 +346,8 @@ impl Object {
 			| Presentation { name, .. }
 			| ExerciseHandler { name, .. }
 			| PluginDispatch { name, .. }
-			| Generic { name, .. } => &name,
-			Thread { url } => &url.thr_pk.as_ref().unwrap(),
+			| Generic { name, .. } => name,
+			Thread { url } => url.thr_pk.as_ref().unwrap(),
 			Video { url } => &url.url,
 			Dashboard { url } => &url.url,
 		}
@@ -366,7 +368,7 @@ impl Object {
 			| ExerciseHandler { url, .. }
 			| PluginDispatch { url, .. }
 			| Video { url }
-			| Generic { url, .. } => &url,
+			| Generic { url, .. } => url,
 		}
 	}
 

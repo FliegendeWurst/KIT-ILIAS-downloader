@@ -17,6 +17,6 @@ pub async fn download(path: &Path, relative_path: &Path, ilias: Arc<ILIAS>, url:
 	}
 	let data = ilias.download(&url.url).await?;
 	log!(0, "Writing {}", relative_path.to_string_lossy());
-	write_stream_to_file(&path, data.bytes_stream()).await?;
+	write_stream_to_file(path, data.bytes_stream()).await?;
 	Ok(())
 }

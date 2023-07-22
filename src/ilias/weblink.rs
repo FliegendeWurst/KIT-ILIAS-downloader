@@ -27,7 +27,7 @@ pub async fn download(path: &Path, relative_path: &Path, ilias: Arc<ILIAS>, url:
 	if url.starts_with(ILIAS_URL) {
 		// is a link list
 		if fs::metadata(&path).await.is_err() {
-			create_dir(&path).await?;
+			create_dir(path).await?;
 			log!(0, "Writing {}", relative_path.to_string_lossy());
 		}
 
