@@ -151,8 +151,8 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 	let mut rx = queue::set_parallel_jobs(ilias.opt.jobs);
 	PROGRESS_BAR_ENABLED.store(atty::is(atty::Stream::Stdout), Ordering::SeqCst);
 	if PROGRESS_BAR_ENABLED.load(Ordering::SeqCst) {
-		PROGRESS_BAR.set_draw_target(ProgressDrawTarget::stderr_nohz());
-		PROGRESS_BAR.set_style(ProgressStyle::default_bar().template("[{pos}/{len}+] {wide_msg}"));
+		PROGRESS_BAR.set_draw_target(ProgressDrawTarget::stderr());
+		PROGRESS_BAR.set_style(ProgressStyle::default_bar().template("[{pos}/{len}+] {wide_msg}")?);
 		PROGRESS_BAR.set_message("initializing..");
 	}
 
@@ -195,7 +195,7 @@ async fn real_main(mut opt: Opt) -> Result<()> {
 		}
 	}
 	if PROGRESS_BAR_ENABLED.load(Ordering::SeqCst) {
-		PROGRESS_BAR.set_style(ProgressStyle::default_bar().template("[{pos}/{len}] {wide_msg}"));
+		PROGRESS_BAR.set_style(ProgressStyle::default_bar().template("[{pos}/{len}] {wide_msg}")?);
 		PROGRESS_BAR.finish_with_message("done");
 	}
 	Ok(())

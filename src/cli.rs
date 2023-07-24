@@ -157,7 +157,7 @@ pub fn ask_user_pass(opt: &Opt) -> Result<(String, String)> {
 	let user = if let Some(username) = opt.username.as_ref() {
 		username.clone()
 	} else {
-		rprompt::prompt_reply_stdout("Username: ").context("username prompt")?
+		rprompt::prompt_reply("Username: ").context("username prompt")?
 	};
 	let (pass, should_store);
 	let keyring = Lazy::new(|| keyring::Entry::new(env!("CARGO_PKG_NAME"), &user));
