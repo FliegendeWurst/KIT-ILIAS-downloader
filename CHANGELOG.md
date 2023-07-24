@@ -3,6 +3,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.7]
+### Fixed
+- session expiration is now recognized more accurately ([#44])
+
 ## [0.3.6]
 ### Fixed
 - `--all` once again downloads all courses you're a member of
@@ -166,6 +170,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [0.1.0] - 2020-04-21
 (undocumented)
 
+[#44]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/44
 [#33]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/pull/33
 [#31]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/31
 [#30]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/30
@@ -189,7 +194,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 [@Craeckie]: https://github.com/Craeckie
 [@funnym0nk3y]: https://github.com/funnym0nk3y
 [@Ma27]: https://github.com/Ma27
-[Unreleased]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.3.6...HEAD
+[Unreleased]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.3.7...HEAD
+[0.3.7]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.3.7...v0.3.6
 [0.3.6]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.3.6...v0.3.5
 [0.3.5]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.3.5...v0.3.4
 [0.3.4]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/compare/v0.3.3...v0.3.4
