@@ -122,8 +122,9 @@ PlatformFailure(Zbus(MethodError("org.freedesktop.DBus.Error.ServiceUnknown", So
 ```
 If you get the above error when activating the `--keyring` option, you need to make sure that your system keyring service (KeePassXC, GNOME Keyring, ...) is running.
 
-## Similar programs
+## Other useful programs
 
-- https://github.com/brantsch/kit-ilias-fuse/
-- https://github.com/Garmelon/PFERD/
+- https://github.com/Garmelon/PFERD
 - https://github.com/DeOldSax/iliasDownloaderTool
+- https://github.com/brantsch/kit-ilias-fuse
+- https://github.com/Mr-Pine/IliasUploaderUtility (unlike the other tools, this one uploads files)
