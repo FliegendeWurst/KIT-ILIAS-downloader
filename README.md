@@ -128,3 +128,4 @@ If you get the above error when activating the `--keyring` option, you need to m
 - https://github.com/DeOldSax/iliasDownloaderTool
 - https://github.com/brantsch/kit-ilias-fuse
 - https://github.com/Mr-Pine/IliasUploaderUtility (unlike the other tools, this one uploads files)
+- https://github.com/I-Al-Istannen/ilias-tests (unlike the other tools, this one processes "tests")
