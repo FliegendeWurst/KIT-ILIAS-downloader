@@ -15,7 +15,7 @@ use crate::{util::write_stream_to_file, ILIAS_URL};
 use super::{ILIAS, URL};
 
 static XOCT_REGEX: Lazy<Regex> =
-	Lazy::new(|| Regex::new(r#"(?m)<script>\s+xoctPaellaPlayer\.init\(([\s\S]+)\)\s+</script>"#).unwrap());
+	Lazy::new(|| Regex::new(r#"(?m)il.Opencast.Paella.player.init\(\s+([\S]+),\s"#).unwrap());
 
 pub async fn download(path: &Path, relative_path: &Path, ilias: Arc<ILIAS>, url: &URL) -> Result<()> {
 	if ilias.opt.no_videos {

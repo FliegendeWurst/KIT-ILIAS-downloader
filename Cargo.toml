@@ -1,6 +1,6 @@
 [package]
 name = "KIT-ILIAS-downloader"
-version = "0.3.7"
+version = "0.3.8"
 authors = ["FliegendeWurst <2012gdwu@posteo.de>"]
 license = "GPL-3.0-or-later"
 edition = "2018"
@@ -12,7 +12,7 @@ reqwest = { version = "0.11.0", default-features = false, features = ["cookies",
 tokio = { version = "1.24.2", features = ["fs", "macros", "net", "rt-multi-thread", "process"] }
 tokio-util = { version = "0.7.0", features = ["io"] }
 serde_json = "1.0.51"
-scraper = "0.17"
+scraper = "0.21"
 url = "2.1.1"
 futures = "0.3.8"
 futures-util = "0.3.8"
@@ -33,7 +33,7 @@ h2 = "0.3.3"
 cookie_store = "0.20"
 reqwest_cookie_store = "0.6"
 bytes = "1.0.1"
-toml = "0.7"
+toml = "0.8"
 tempfile = "3.2.0"
 ego-tree = "0.6.2"
 async-recursion = "1.0.0"

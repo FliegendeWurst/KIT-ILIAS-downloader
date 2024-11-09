@@ -309,10 +309,6 @@ impl ILIAS {
 	}
 }
 
-trait IliasObject {
-	fn download(ilias: Arc<ILIAS>) -> Result<()>;
-}
-
 #[derive(Debug)]
 pub enum Object {
 	Course { name: String, url: URL },
