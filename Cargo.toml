@@ -1,6 +1,6 @@
 [package]
 name = "KIT-ILIAS-downloader"
-version = "0.3.8"
+version = "0.3.9"
 authors = ["FliegendeWurst <2012gdwu@posteo.de>"]
 license = "GPL-3.0-or-later"
 edition = "2018"
@@ -8,7 +8,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-reqwest = { version = "0.11.0", default-features = false, features = ["cookies", "gzip", "json", "rustls-tls", "stream", "socks"] }
+reqwest = { version = "0.12", default-features = false, features = ["cookies", "gzip", "json", "rustls-tls", "stream", "socks"] }
 tokio = { version = "1.24.2", features = ["fs", "macros", "net", "rt-multi-thread", "process"] }
 tokio-util = { version = "0.7.0", features = ["io"] }
 serde_json = "1.0.51"
@@ -30,8 +30,8 @@ indicatif = "0.17"
 once_cell = "1.7.2"
 atty = "0.2.14"
 h2 = "0.3.3"
-cookie_store = "0.20"
-reqwest_cookie_store = "0.6"
+cookie_store = "0.21"
+reqwest_cookie_store = "0.8"
 bytes = "1.0.1"
 toml = "0.8"
 tempfile = "3.2.0"
