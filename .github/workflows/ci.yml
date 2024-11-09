@@ -44,7 +44,7 @@ jobs:
     - name: Build
       run: cargo build --release ${{ matrix.features }} --verbose
     - name: Archive artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       if: matrix.features == '--all-features'
       with:
         name: Binaries
