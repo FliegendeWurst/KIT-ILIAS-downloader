@@ -3,6 +3,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.8]
+### Fixed
+- Video downloads work again ([#54])
+
 ## [0.3.7]
 ### Fixed
 - session expiration is now recognized more accurately ([#44])
@@ -170,6 +174,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [0.1.0] - 2020-04-21
 (undocumented)
 
+[#54]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/54
 [#44]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/44
 [#33]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/pull/33
 [#31]: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/31
