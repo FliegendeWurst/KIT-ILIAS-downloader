@@ -45,9 +45,13 @@ jobs:
       run: cargo build --release ${{ matrix.features }} --verbose
     - name: Archive artifacts
       uses: actions/upload-artifact@v4
-      if: matrix.features == '--all-features'
+      if: matrix.features == '--all-features' && matrix.os == 'windows-latest'
       with:
         name: Binaries
-        path: |
-          target/release/KIT-ILIAS-downloader
-          target/release/KIT-ILIAS-downloader.exe
+        path: target/release/KIT-ILIAS-downloader.exe
+    - name: Archive artifacts
+      uses: actions/upload-artifact@v4
+      if: matrix.features == '--all-features' && matrix.os == 'ubuntu-latest'
+      with:
+        name: Binaries
+        path: target/release/KIT-ILIAS-downloader
