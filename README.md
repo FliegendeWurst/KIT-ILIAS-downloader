@@ -1,5 +1,10 @@
 # KIT-ILIAS-downloader
 
+> [!Warning]
+> The program no longer works since the upgrade to ILIAS 9: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/63
+> 
+> Meanwhile you can use the more complicated [PFERD](https://github.com/Garmelon/PFERD), or step up to maintain this downloader :)
+
 Download content from ILIAS. That includes:
 
 * files
