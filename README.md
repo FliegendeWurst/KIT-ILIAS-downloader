@@ -2,7 +2,9 @@
 
 > [!Warning]
 > The program no longer works since the upgrade to ILIAS 9: https://github.com/FliegendeWurst/KIT-ILIAS-downloader/issues/63
-> 
+>
+> This fork has been updated to support ILIAS 9, among other changes: https://github.com/Kagayachan/KIT-ILIAS-downloader/tree/main
+>
 > Meanwhile you can use the more complicated [PFERD](https://github.com/Garmelon/PFERD), or step up to maintain this downloader :)
 
 Download content from ILIAS. That includes:
